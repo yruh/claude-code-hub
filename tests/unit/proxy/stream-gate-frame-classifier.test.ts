@@ -11,6 +11,7 @@ describe("mapProviderTypeToFamily", () => {
     expect(mapProviderTypeToFamily("claude-auth")).toBe("anthropic");
     expect(mapProviderTypeToFamily("codex")).toBe("openai-responses");
     expect(mapProviderTypeToFamily("openai-compatible")).toBe("openai-chat");
+    expect(mapProviderTypeToFamily("opencode-go")).toBe("openai-chat");
     expect(mapProviderTypeToFamily("gemini")).toBe("gemini");
     expect(mapProviderTypeToFamily("gemini-cli")).toBe("gemini");
     expect(mapProviderTypeToFamily("unknown-type")).toBeNull();

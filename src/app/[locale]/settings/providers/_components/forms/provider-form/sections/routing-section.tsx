@@ -62,6 +62,8 @@ export function RoutingSection({ subSectionRefs }: RoutingSectionProps) {
         return t("providerTypes.gemini");
       case "openai-compatible":
         return t("providerTypes.openaiCompatible");
+      case "opencode-go":
+        return t("providerTypes.opencodeGo");
       default:
         return type;
     }
@@ -76,7 +78,13 @@ export function RoutingSection({ subSectionRefs }: RoutingSectionProps) {
     dispatch({ type: "SET_GROUP_TAG", payload: nextTags });
   };
 
-  const providerTypes: ProviderType[] = ["claude", "codex", "gemini", "openai-compatible"];
+  const providerTypes: ProviderType[] = [
+    "claude",
+    "opencode-go",
+    "codex",
+    "gemini",
+    "openai-compatible",
+  ];
   const allowedClients = state.routing.allowedClients;
   const blockedClients = state.routing.blockedClients;
   const hasAnyClientRestrictions = allowedClients.length > 0 || blockedClients.length > 0;

@@ -8,7 +8,8 @@ export type ProviderType =
   | "codex"
   | "gemini"
   | "gemini-cli"
-  | "openai-compatible";
+  | "openai-compatible"
+  | "opencode-go";
 
 // Codex（Responses API）请求参数覆写偏好
 // - "inherit": 遵循客户端请求（默认）

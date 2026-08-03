@@ -22,5 +22,9 @@
   "openaiCompatible": {
     "description": "OpenAI 互換 API",
     "label": "OpenAI Compatible"
+  },
+  "opencodeGo": {
+    "description": "Claude Messages を OpenAI Chat Completions に変換",
+    "label": "OpenCode Go"
   }
 }

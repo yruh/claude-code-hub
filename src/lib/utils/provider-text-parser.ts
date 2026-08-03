@@ -14,16 +14,18 @@ export interface ParsedProviderInfo {
   };
 }
 
-type DetectableProviderType = "claude" | "codex" | "gemini" | "openai-compatible";
+type DetectableProviderType = "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
 
 const PROVIDER_TYPE_KEYWORDS: Record<DetectableProviderType, RegExp[]> = {
   claude: [/claude/i, /anthropic/i, /\/messages\b/i],
   codex: [/openai/i, /codex/i, /\bgpt\b/i, /\/responses\b/i],
   gemini: [/gemini/i, /vertex/i, /google/i, /v1beta/i],
   "openai-compatible": [/\/completions\b/i, /openai[\s-]*compatible/i],
+  "opencode-go": [/opencode[\s-]*go/i],
 };
 
 const DETECTION_PRIORITY: DetectableProviderType[] = [
+  "opencode-go",
   "openai-compatible",
   "claude",
   "codex",

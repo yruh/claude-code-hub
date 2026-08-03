@@ -497,7 +497,15 @@ export const CreateProviderSchema = z
     group_tag: z.string().max(255, "分组标签不能超过255个字符").nullable().optional(),
     // Codex 支持:供应商类型和模型重定向
     provider_type: z
-      .enum(["claude", "claude-auth", "codex", "gemini", "gemini-cli", "openai-compatible"])
+      .enum([
+        "claude",
+        "claude-auth",
+        "codex",
+        "gemini",
+        "gemini-cli",
+        "openai-compatible",
+        "opencode-go",
+      ])
       .optional()
       .default("claude"),
     preserve_client_ip: z.boolean().optional().default(false),
@@ -746,7 +754,15 @@ export const UpdateProviderSchema = z
     group_tag: z.string().max(255, "分组标签不能超过255个字符").nullable().optional(),
     // Codex 支持:供应商类型和模型重定向
     provider_type: z
-      .enum(["claude", "claude-auth", "codex", "gemini", "gemini-cli", "openai-compatible"])
+      .enum([
+        "claude",
+        "claude-auth",
+        "codex",
+        "gemini",
+        "gemini-cli",
+        "openai-compatible",
+        "opencode-go",
+      ])
       .optional(),
     preserve_client_ip: z.boolean().optional(),
     disable_session_reuse: z.boolean().optional(),

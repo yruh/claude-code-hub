@@ -52,6 +52,7 @@ export function kindFromProviderType(
     case "claude-auth":
       return isStream ? "anthropic/stream" : "anthropic/non-stream";
     case "openai-compatible":
+    case "opencode-go":
       return isStream ? "openai-chat/stream" : "openai-chat/non-stream";
     case "codex":
       return isStream ? "openai-responses/stream" : "openai-responses/non-stream";
@@ -116,6 +117,12 @@ export function extractActualResponseModelForProvider(
   body: string | null | undefined
 ): string | null {
   if (!providerType || !body) return null;
+  if (providerType === "opencode-go") {
+    return (
+      extractActualResponseModel(isStream ? "anthropic/stream" : "anthropic/non-stream", body) ??
+      extractActualResponseModel(isStream ? "openai-chat/stream" : "openai-chat/non-stream", body)
+    );
+  }
   const kind = kindFromProviderType(providerType, isStream);
   if (!kind) return null;
   return extractActualResponseModel(kind, body);

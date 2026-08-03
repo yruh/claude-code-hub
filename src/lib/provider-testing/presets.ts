@@ -123,7 +123,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   oa_chat_basic: {
     id: "oa_chat_basic",
     description: "OpenAI compatible chat completion",
-    providerTypes: ["openai-compatible"],
+    providerTypes: ["openai-compatible", "opencode-go"],
     payload: oaChatBasic,
     defaultSuccessContains: "pong",
     defaultModel: "gpt-4.1-mini",
@@ -134,7 +134,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   oa_chat_stream: {
     id: "oa_chat_stream",
     description: "OpenAI compatible chat completion stream",
-    providerTypes: ["openai-compatible"],
+    providerTypes: ["openai-compatible", "opencode-go"],
     payload: oaChatStream,
     defaultSuccessContains: "pong",
     defaultModel: "gpt-4.1-mini",
@@ -182,6 +182,7 @@ export const PRESET_MAPPING: Record<ProviderType, string[]> = {
   "claude-auth": ["cc_haiku_basic", "cc_beta_cli", "cc_public_thinking"],
   codex: ["cx_codex_basic", "cx_gpt_basic"],
   "openai-compatible": ["oa_chat_basic", "oa_chat_stream"],
+  "opencode-go": ["oa_chat_basic", "oa_chat_stream"],
   gemini: ["gm_flash_basic", "gm_pro_basic"],
   "gemini-cli": ["gm_flash_basic", "gm_pro_basic"],
 };

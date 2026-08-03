@@ -184,6 +184,12 @@ const STREAM_SIGNALS: Record<ProtocolFamily, StreamSignal> = {
           "item.operation",
         ],
       },
+      {
+        // 部分 Responses 兼容上游不发送 delta/done，只在终态信封里返回完整 output。
+        // 终态 output 非空即代表响应已产生有效结果；空数组仍由 terminalEvents 判为空流。
+        eventTypes: ["response.completed", "response.done"],
+        anyPaths: ["response.output"],
+      },
     ],
     errorRules: [
       // 顶层 error 事件（code/message/param）
@@ -264,6 +270,7 @@ export function mapProviderTypeToFamily(
     case "codex":
       return "openai-responses";
     case "openai-compatible":
+    case "opencode-go":
       return "openai-chat";
     case "gemini":
     case "gemini-cli":

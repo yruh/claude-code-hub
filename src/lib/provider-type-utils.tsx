@@ -49,6 +49,11 @@ export const PROVIDER_TYPE_CONFIG: Record<
     iconColor: "text-cyan-600",
     bgColor: "bg-cyan-500/15",
   },
+  "opencode-go": {
+    icon: OpenAI,
+    iconColor: "text-teal-700",
+    bgColor: "bg-teal-500/15",
+  },
 };
 
 // 获取供应商类型配置

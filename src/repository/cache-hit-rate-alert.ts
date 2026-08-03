@@ -86,6 +86,7 @@ function normalizeTtlFallbackSeconds(config: CacheHitRateAlertQueryConfig): {
     gemini: defaultSeconds,
     "gemini-cli": defaultSeconds,
     "openai-compatible": 600,
+    "opencode-go": 600,
   };
   const overrides = config.ttlFallbackSecondsByProviderType ?? {};
   const byType: Record<ProviderType, number> = { ...base };

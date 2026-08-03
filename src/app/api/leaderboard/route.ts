@@ -23,7 +23,8 @@ function isProviderType(value: string): value is ProviderType {
     value === "codex" ||
     value === "gemini" ||
     value === "gemini-cli" ||
-    value === "openai-compatible"
+    value === "openai-compatible" ||
+    value === "opencode-go"
   );
 }
 

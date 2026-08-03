@@ -6,5 +6,6 @@
   "geminiCli": "Gemini CLI",
   "geminiCliDisabled": " - in development",
   "openaiCompatible": "OpenAI Compatible",
-  "openaiCompatibleDisabled": " - in development"
+  "openaiCompatibleDisabled": " - in development",
+  "opencodeGo": "OpenCode Go (Claude to OpenAI)"
 }

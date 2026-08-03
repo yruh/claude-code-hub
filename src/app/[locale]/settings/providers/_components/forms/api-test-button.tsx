@@ -35,6 +35,7 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   "claude-auth": "claude-haiku-4-5-20251001",
   codex: "gpt-5.5",
   "openai-compatible": "gpt-4.1-mini",
+  "opencode-go": "kimi-k2.5",
   gemini: "gemini-2.5-flash",
   "gemini-cli": "gemini-2.5-flash",
 };

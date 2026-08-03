@@ -10,6 +10,7 @@ export const PUBLIC_PROVIDER_TYPE_VALUES = [
   "codex",
   "gemini",
   "openai-compatible",
+  "opencode-go",
 ] as const;
 export const HIDDEN_PROVIDER_TYPES = ["claude-auth", "gemini-cli"] as const;
 export const INTERNAL_PROVIDER_TYPE_VALUES = [

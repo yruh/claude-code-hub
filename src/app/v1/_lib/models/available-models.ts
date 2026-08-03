@@ -307,6 +307,7 @@ async function fetchModelsFromProvider(provider: Provider): Promise<FetchedModel
     claude: UPSTREAM_CONFIGS.claude,
     "claude-auth": UPSTREAM_CONFIGS.claude,
     "openai-compatible": UPSTREAM_CONFIGS.openai,
+    "opencode-go": UPSTREAM_CONFIGS.openai,
     codex: UPSTREAM_CONFIGS.openai,
     gemini: UPSTREAM_CONFIGS.gemini,
     "gemini-cli": UPSTREAM_CONFIGS.gemini,
@@ -332,7 +333,7 @@ async function fetchModelsFromProvider(provider: Provider): Promise<FetchedModel
 export function getProviderTypesForFormat(clientFormat: ClientFormat): Provider["providerType"][] {
   switch (clientFormat) {
     case "claude":
-      return ["claude", "claude-auth"];
+      return ["claude", "claude-auth", "opencode-go"];
     case "openai":
       // openai 格式需要对 codex 和 openai-compatible 分别决策
       return ["codex", "openai-compatible"];

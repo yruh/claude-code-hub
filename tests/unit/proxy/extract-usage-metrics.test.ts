@@ -824,6 +824,45 @@ describe("extractUsageMetrics", () => {
   });
 
   describe("openai-compatible cached_tokens subset normalization", () => {
+    it("should normalize native OpenCode Go OpenAI usage", () => {
+      const response = JSON.stringify({
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 5,
+          prompt_tokens_details: { cached_tokens: 70, cache_write_tokens: 20 },
+        },
+      });
+
+      const result = parseUsageFromResponseText(response, "opencode-go");
+
+      expect(result.usageMetrics).toMatchObject({
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 70,
+      });
+    });
+
+    it("should keep transformed OpenCode Go Claude stream usage disjoint", () => {
+      const sse = [
+        'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}',
+        "",
+        'event: message_delta\ndata: {"type":"message_delta","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":20,"cache_read_input_tokens":70}}',
+        "",
+        'event: message_stop\ndata: {"type":"message_stop"}',
+        "",
+      ].join("\n");
+
+      const result = parseUsageFromResponseText(sse, "opencode-go");
+
+      expect(result.usageMetrics).toMatchObject({
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 70,
+      });
+    });
+
     it("should keep top-level cache creation disjoint while subtracting cached input", () => {
       const response = JSON.stringify({
         usage: {

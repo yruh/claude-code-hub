@@ -22,5 +22,9 @@
   "openaiCompatible": {
     "description": "OpenAI Compatible API",
     "label": "OpenAI Compatible"
+  },
+  "opencodeGo": {
+    "description": "Claude Messages bridge to OpenAI Chat Completions",
+    "label": "OpenCode Go"
   }
 }

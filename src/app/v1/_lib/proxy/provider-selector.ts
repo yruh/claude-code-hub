@@ -30,6 +30,7 @@ import {
   fingerprintTip,
 } from "./affinity/fingerprint";
 import { isClientAllowedDetailed } from "./client-detector";
+import { normalizeEndpointPath, V1_ENDPOINT_PATHS } from "./endpoint-paths";
 import type { ClientFormat } from "./format-mapper";
 import { getVerboseProviderErrorCached } from "./provider-selector-settings-cache";
 import { ProxyResponses } from "./responses";
@@ -151,7 +152,7 @@ function providerSupportsModel(provider: Provider, requestedModel: string): bool
  * 核心逻辑：确保客户端请求格式与供应商类型兼容，避免格式错配
  *
  * 映射关系：
- * - claude → claude | claude-auth
+ * - claude → claude | claude-auth | opencode-go
  * - response → codex
  * - openai → openai-compatible
  * - gemini → gemini
@@ -169,7 +170,11 @@ function checkFormatProviderTypeCompatibility(
 ): boolean {
   switch (format) {
     case "claude":
-      return providerType === "claude" || providerType === "claude-auth";
+      return (
+        providerType === "claude" ||
+        providerType === "claude-auth" ||
+        providerType === "opencode-go"
+      );
     case "response":
       return providerType === "codex";
     case "openai":
@@ -181,6 +186,23 @@ function checkFormatProviderTypeCompatibility(
     default:
       return true; // 未知格式回退为兼容（不会主动过滤）
   }
+}
+
+function checkSessionProviderCompatibility(
+  session: Pick<ProxySession, "originalFormat" | "requestUrl">,
+  providerType: Provider["providerType"]
+): boolean {
+  if (
+    session.originalFormat &&
+    !checkFormatProviderTypeCompatibility(session.originalFormat, providerType)
+  ) {
+    return false;
+  }
+
+  return (
+    providerType !== "opencode-go" ||
+    normalizeEndpointPath(session.requestUrl.pathname) === V1_ENDPOINT_PATHS.MESSAGES
+  );
 }
 
 export class ProxyProviderResolver {
@@ -746,10 +768,7 @@ export class ProxyProviderResolver {
       return null;
     }
     if (await isCircuitOpen(provider.id)) return null;
-    if (
-      session.originalFormat &&
-      !checkFormatProviderTypeCompatibility(session.originalFormat, provider.providerType)
-    ) {
+    if (!checkSessionProviderCompatibility(session, provider.providerType)) {
       return null;
     }
     const requestedModel = session.getOriginalModel();
@@ -928,10 +947,7 @@ export class ProxyProviderResolver {
       return null;
     }
 
-    if (
-      session.originalFormat &&
-      !checkFormatProviderTypeCompatibility(session.originalFormat, provider.providerType)
-    ) {
+    if (!checkSessionProviderCompatibility(session, provider.providerType)) {
       logger.debug("ProviderSelector: Session provider incompatible with request format", {
         sessionId: session.sessionId,
         providerId: provider.id,
@@ -1243,12 +1259,12 @@ export class ProxyProviderResolver {
 
       // 2b. 格式类型匹配（新增）
       // 根据 session.originalFormat 限制候选供应商类型，避免格式错配
-      if (session?.originalFormat) {
-        const isFormatCompatible = checkFormatProviderTypeCompatibility(
-          session.originalFormat,
+      if (session) {
+        const isRequestCompatible = checkSessionProviderCompatibility(
+          session,
           provider.providerType
         );
-        if (!isFormatCompatible) {
+        if (!isRequestCompatible) {
           return false; // 过滤掉格式不兼容的供应商
         }
       }
@@ -1288,12 +1304,12 @@ export class ProxyProviderResolver {
         } else if (!isProviderActiveNow(p.activeTimeStart, p.activeTimeEnd, systemTimezone)) {
           reason = "schedule_inactive";
           details = `outside active window ${p.activeTimeStart}-${p.activeTimeEnd}`;
-        } else if (
-          session?.originalFormat &&
-          !checkFormatProviderTypeCompatibility(session.originalFormat, p.providerType)
-        ) {
+        } else if (session && !checkSessionProviderCompatibility(session, p.providerType)) {
           reason = "format_type_mismatch";
-          details = `原始格式 ${session.originalFormat} 与供应商类型 ${p.providerType} 不兼容`;
+          details =
+            p.providerType === "opencode-go"
+              ? `供应商类型 opencode-go 仅支持 ${V1_ENDPOINT_PATHS.MESSAGES}`
+              : `原始格式 ${session.originalFormat} 与供应商类型 ${p.providerType} 不兼容`;
         } else if (requestedModel && !providerSupportsModel(p, requestedModel)) {
           reason = "model_not_allowed";
           details = `不支持模型 ${requestedModel}`;
@@ -1633,7 +1649,7 @@ export class ProxyProviderResolver {
 
     // 将 providerType 映射为 decisionContext 允许的 targetType
     const targetType: "claude" | "codex" | "openai-compatible" | "gemini" | "gemini-cli" =
-      providerType === "claude-auth" ? "claude" : providerType;
+      providerType === "claude-auth" || providerType === "opencode-go" ? "claude" : providerType;
 
     if (typeFiltered.length === 0) {
       return {

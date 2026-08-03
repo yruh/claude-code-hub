@@ -34,6 +34,11 @@ describe("provider-text-parser", () => {
       expect(detectProviderType("OpenAI Compatible")).toBe("openai-compatible");
     });
 
+    test("should detect opencode-go before generic OpenAI-compatible keywords", () => {
+      expect(detectProviderType("OpenCode Go /v1/chat/completions")).toBe("opencode-go");
+      expect(detectProviderType("opencode-go endpoint")).toBe("opencode-go");
+    });
+
     test("should return default type claude for unmatched text", () => {
       expect(detectProviderType("random text")).toBe("claude");
       expect(detectProviderType("")).toBe("claude");

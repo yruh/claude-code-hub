@@ -21,7 +21,11 @@ import { MAX_PUBLIC_STATUS_RANGE_HOURS, PUBLIC_STATUS_INTERVAL_SET } from "./con
 import { resolvePublicStatusVendorIconKey } from "./vendor-icon-key";
 
 function resolveRequestTypeBadge(modelName: string, providerTypeOverride?: ProviderType): string {
-  if (providerTypeOverride === "claude" || providerTypeOverride === "claude-auth") {
+  if (
+    providerTypeOverride === "claude" ||
+    providerTypeOverride === "claude-auth" ||
+    providerTypeOverride === "opencode-go"
+  ) {
     return "anthropic";
   }
   if (providerTypeOverride === "codex") {

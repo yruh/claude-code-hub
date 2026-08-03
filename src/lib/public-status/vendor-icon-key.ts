@@ -47,6 +47,7 @@ const PROVIDER_TYPE_ICON_KEYS: Partial<Record<ProviderType, PublicStatusVendorIc
   codex: "openai",
   gemini: "gemini",
   "gemini-cli": "gemini",
+  "opencode-go": "openai",
 };
 
 const RAW_PROVIDER_TO_PUBLIC_STATUS_ICON_KEY: Record<string, PublicStatusVendorIconKey> = {

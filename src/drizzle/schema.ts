@@ -206,6 +206,7 @@ export const providers = pgTable('providers', {
   // - codex: Codex CLI (Response API)
   // - gemini-cli: Gemini CLI
   // - openai-compatible: OpenAI Compatible API
+  // - opencode-go: Claude Messages to OpenAI Chat Completions bridge
   providerType: varchar('provider_type', { length: 20 })
     .notNull()
     .default('claude')

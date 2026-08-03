@@ -62,6 +62,10 @@ import {
 import { isDiscoveryProtocolErrorPayload } from "./discovery-validity";
 import { isClientAbortError, isTransportError } from "./errors";
 import {
+  createOpenAIToClaudeStreamTransform,
+  transformOpenAIResponseToClaude,
+} from "./opencode-go-converter";
+import {
   abortReplayOwnership,
   createReplaySpoolIfOwner,
   releaseReplayOwnership,
@@ -2897,6 +2901,30 @@ export class ProxyResponseHandler {
       }
     }
 
+    if (provider.providerType === "opencode-go") {
+      try {
+        const responseText = await response.clone().text();
+        const transformed = transformOpenAIResponseToClaude(
+          JSON.parse(responseText) as unknown,
+          session.request.model ?? ""
+        );
+        const transformedBody = JSON.stringify(transformed);
+        finalResponseBodyForSnapshot = transformedBody;
+        const transformedHeaders = cleanResponseHeaders(response.headers);
+        transformedHeaders.set("content-type", "application/json");
+        finalResponse = new Response(transformedBody, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: transformedHeaders,
+        });
+      } catch (error) {
+        logger.error("[ResponseHandler] Failed to transform OpenCode Go response", { error });
+        responseTransformFailed = true;
+        finalResponse = response;
+        finalResponseBodyForSnapshot = null;
+      }
+    }
+
     if (responseTransformFailed) {
       await abortReplayOwnership(session, "non_stream_transform_error");
     }
@@ -4124,6 +4152,15 @@ export class ProxyResponseHandler {
       }
     }
 
+    if (provider.providerType === "opencode-go") {
+      protocolObservedBeforeProcessing = true;
+      processedStream = response.body.pipeThrough(
+        createOpenAIToClaudeStreamTransform(session.request.model ?? "", (chunk) => {
+          streamProtocolObserver?.observe(chunk);
+        })
+      );
+    }
+
     const statusCode = response.status;
 
     // 使用 AsyncTaskManager 管理后台处理任务
@@ -4812,7 +4849,10 @@ export class ProxyResponseHandler {
     const shadowGateObserver = (() => {
       if (resolveStreamGateMode() !== "shadow") return null;
       if (session.getEndpointPolicy().kind === "raw_passthrough") return null;
-      const family = mapProviderTypeToFamily(provider.providerType);
+      const family =
+        provider.providerType === "opencode-go"
+          ? "anthropic"
+          : mapProviderTypeToFamily(provider.providerType);
       if (!family) return null;
       return createShadowGateObserver({
         family,
@@ -5249,6 +5289,9 @@ export class ProxyResponseHandler {
     // ⭐ 修复 Bun 运行时的 Transfer-Encoding 重复问题
     // 清理上游的传输 headers，让 Response API 自动管理
     const finalStreamHeaders = cleanResponseHeaders(response.headers);
+    if (provider.providerType === "opencode-go") {
+      finalStreamHeaders.set("content-type", "text/event-stream; charset=utf-8");
+    }
     if (session.sessionId && session.shouldPersistSessionDebugArtifacts()) {
       const responseAfterMetaTask = SessionManager.storeSessionResponsePhaseSnapshot?.(
         session.sessionId,
@@ -5791,7 +5834,11 @@ export function parseUsageFromResponseText(
 
     if (mergedClaudeUsage) {
       usageRecord = mergedClaudeUsage as unknown as Record<string, unknown>;
-      usageMetrics = adjustUsageForProviderType(mergedClaudeUsage, providerType, usageRecord);
+      usageMetrics = adjustUsageForProviderType(
+        mergedClaudeUsage,
+        providerType === "opencode-go" ? "claude" : providerType,
+        usageRecord
+      );
       logger.debug("[ResponseHandler] Final merged usage from Claude SSE", {
         providerType,
         usage: usageMetrics,
@@ -5817,7 +5864,11 @@ export function parseUsageFromResponseText(
 // input_tokens (OpenAI semantics) rather than as disjoint buckets (Anthropic
 // semantics). For these, subtract both cache buckets from input_tokens before
 // persistence so internal cost buckets are not double-counted.
-const PROVIDERS_WITH_CACHE_SUBSET_USAGE = new Set<string>(["codex", "openai-compatible"]);
+const PROVIDERS_WITH_CACHE_SUBSET_USAGE = new Set<string>([
+  "codex",
+  "openai-compatible",
+  "opencode-go",
+]);
 
 function adjustUsageForProviderType(
   usage: UsageMetrics,

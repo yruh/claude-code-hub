@@ -192,6 +192,56 @@ describe("ProxyResponseHandler.dispatch public routing", () => {
     expect(releaseAgent).toHaveBeenCalledOnce();
   });
 
+  it("converts an OpenCode Go nonstream response back to Claude Messages", async () => {
+    const releaseAgent = vi.fn();
+    const provider = { ...createProvider(), providerType: "opencode-go" as const };
+    const session = await createSession(false, provider);
+    Object.defineProperty(session, "releaseAgent", {
+      configurable: true,
+      value: releaseAgent,
+      writable: true,
+    });
+    const upstream = new Response(
+      JSON.stringify({
+        id: "chatcmpl-dispatch",
+        model: "kimi-k2.5",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "converted" },
+          },
+        ],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 4,
+          prompt_cache_hit_tokens: 75,
+          prompt_cache_miss_tokens: 10,
+        },
+      }),
+      { headers: { "content-type": "application/json" } }
+    );
+
+    const returned = await ProxyResponseHandler.dispatch(session, upstream);
+    const body = await returned.json();
+    await settleTasks();
+
+    expect(body).toMatchObject({
+      id: "msg_chatcmpl-dispatch",
+      type: "message",
+      role: "assistant",
+      model: "kimi-k2.5",
+      content: [{ type: "text", text: "converted" }],
+      usage: {
+        input_tokens: 15,
+        output_tokens: 4,
+        cache_creation_input_tokens: 10,
+        cache_read_input_tokens: 75,
+      },
+    });
+    expect(returned.headers.get("content-type")).toContain("application/json");
+    expect(releaseAgent).toHaveBeenCalledOnce();
+  });
+
   it("routes SSE through the stream boundary and releases an incomplete session", async () => {
     const releaseAgent = vi.fn();
     const session = await createSession(true, createProvider());

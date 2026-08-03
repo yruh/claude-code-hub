@@ -106,8 +106,8 @@ describe("inferOwner - 根据模型 ID 推断所有者", () => {
 });
 
 describe("getProviderTypesForFormat - 客户端格式到 Provider 类型映射", () => {
-  test("claude 格式应返回 claude 和 claude-auth 类型", () => {
-    expect(getProviderTypesForFormat("claude")).toEqual(["claude", "claude-auth"]);
+  test("claude 格式应返回原生 Claude 和 OpenCode Go 类型", () => {
+    expect(getProviderTypesForFormat("claude")).toEqual(["claude", "claude-auth", "opencode-go"]);
   });
 
   test("openai 格式应返回 codex 和 openai-compatible 类型", () => {

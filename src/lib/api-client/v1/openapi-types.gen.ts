@@ -4337,7 +4337,7 @@ export interface operations {
                 /** @description Case-insensitive provider search text. */
                 q?: string;
                 /** @description Provider type. */
-                providerType?: "claude" | "codex" | "gemini" | "openai-compatible";
+                providerType?: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                 /** @description Optional response expansion. Supported value: statistics. */
                 include?: "statistics";
             };
@@ -4385,7 +4385,7 @@ export interface operations {
                              * @description Supported provider type. Hidden legacy provider types are intentionally excluded.
                              * @enum {string}
                              */
-                            providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                            providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                             /** @description Provider vendor id. */
                             providerVendorId: number | null;
                             /** @description Whether client IP is preserved upstream. */
@@ -4701,7 +4701,7 @@ export interface operations {
                      * @default claude
                      * @enum {string}
                      */
-                    provider_type?: "claude" | "codex" | "gemini" | "openai-compatible";
+                    provider_type?: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                     /** @description Whether client IP is preserved upstream. */
                     preserve_client_ip?: boolean;
                     /** @description Whether sticky session reuse is disabled. */
@@ -4850,7 +4850,7 @@ export interface operations {
                          * @description Supported provider type. Hidden legacy provider types are intentionally excluded.
                          * @enum {string}
                          */
-                        providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                        providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                         /** @description Provider vendor id. */
                         providerVendorId: number | null;
                         /** @description Whether client IP is preserved upstream. */
@@ -5172,7 +5172,7 @@ export interface operations {
                          * @description Supported provider type. Hidden legacy provider types are intentionally excluded.
                          * @enum {string}
                          */
-                        providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                        providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                         /** @description Provider vendor id. */
                         providerVendorId: number | null;
                         /** @description Whether client IP is preserved upstream. */
@@ -5663,7 +5663,7 @@ export interface operations {
                      * @description Supported provider type. Hidden legacy provider types are intentionally excluded.
                      * @enum {string}
                      */
-                    provider_type?: "claude" | "codex" | "gemini" | "openai-compatible";
+                    provider_type?: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                     /** @description Whether client IP is preserved upstream. */
                     preserve_client_ip?: boolean;
                     /** @description Whether sticky session reuse is disabled. */
@@ -5818,7 +5818,7 @@ export interface operations {
                          * @description Supported provider type. Hidden legacy provider types are intentionally excluded.
                          * @enum {string}
                          */
-                        providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                        providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                         /** @description Provider vendor id. */
                         providerVendorId: number | null;
                         /** @description Whether client IP is preserved upstream. */
@@ -9267,7 +9267,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                     /** @description Latency threshold in milliseconds. */
                     latencyThresholdMs?: number;
                     /** @description Expected response content. */
@@ -10404,7 +10404,7 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Provider type. */
-                providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
             };
             header?: never;
             path?: never;
@@ -10606,7 +10606,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                 };
             };
         };
@@ -25212,7 +25212,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Provider type. */
-                providerType?: "claude" | "codex" | "gemini" | "openai-compatible";
+                providerType?: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                 /** @description Return dashboard-oriented endpoints. */
                 dashboard?: boolean | null;
             };
@@ -25444,7 +25444,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                     /**
                      * Format: uri
                      * @description Endpoint URL.
@@ -26770,7 +26770,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                 };
             };
         };
@@ -27615,7 +27615,7 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Provider type. */
-                providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
             };
             header?: never;
             path: {
@@ -27844,7 +27844,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                     /** @description Whether the vendor type circuit is manually open. */
                     manualOpen: boolean;
                 };
@@ -28065,7 +28065,7 @@ export interface operations {
                      * @description Provider type.
                      * @enum {string}
                      */
-                    providerType: "claude" | "codex" | "gemini" | "openai-compatible";
+                    providerType: "claude" | "codex" | "gemini" | "openai-compatible" | "opencode-go";
                 };
             };
         };

@@ -73,6 +73,7 @@ import { deriveClientSafeUpstreamErrorMessage } from "./client-error-message";
 import { type DiscoveryAction, DiscoveryCoordinator } from "./discovery-coordinator";
 import { type DiscoveryProtocol, DiscoveryValidityParser } from "./discovery-validity";
 import { isStandardProxyEndpointPath } from "./endpoint-family-catalog";
+import { normalizeEndpointPath, V1_ENDPOINT_PATHS } from "./endpoint-paths";
 import { resolveEndpointPolicy, shouldEnforceStrictEndpointPoolPolicy } from "./endpoint-policy";
 import {
   ALL_PROVIDERS_UNAVAILABLE_MESSAGE,
@@ -106,6 +107,7 @@ import {
   syncOpenAIImageMultipartFromLogicalBody,
   validateOpenAIImageRequest,
 } from "./openai-image-compat";
+import { transformClaudeRequestToOpenAI } from "./opencode-go-converter";
 import { ProxyProviderResolver } from "./provider-selector";
 import { abortReplayOwnership, releaseReplayOwnership } from "./replay/replay-spool";
 import { isJsonResponseContentType, isMalformedJsonResponseBody } from "./response-content-type";
@@ -3173,7 +3175,14 @@ export class ProxyForwarder {
       // ⭐ 直接使用原始请求路径，让 buildProxyUrl() 智能处理路径拼接
       // 移除了强制 /v1/responses 路径重写，解决 Issue #139
       // buildProxyUrl() 会检测 base_url 是否已包含完整路径，避免重复拼接
-      proxyUrl = buildProxyUrl(effectiveBaseUrl, session.requestUrl);
+      const upstreamRequestUrl = new URL(session.requestUrl.toString());
+      if (provider.providerType === "opencode-go") {
+        if (normalizeEndpointPath(requestPath) !== V1_ENDPOINT_PATHS.MESSAGES) {
+          throw new ProxyError("OpenCode Go only supports the Claude Messages endpoint.", 400);
+        }
+        upstreamRequestUrl.pathname = "/v1/chat/completions";
+      }
+      proxyUrl = buildProxyUrl(effectiveBaseUrl, upstreamRequestUrl);
 
       // Host header must match actual request target for undici TLS cert validation
       // When provider has multiple endpoints, provider.url and proxyUrl hosts may differ
@@ -3305,6 +3314,10 @@ export class ProxyForwarder {
           if (!ProxyForwarder.getEndpointPolicy(session).bypassRequestFilters) {
             const { requestFilterEngine } = await import("@/lib/request-filter-engine");
             await requestFilterEngine.applyFinal(session, messageToSend, processedHeaders);
+          }
+
+          if (provider.providerType === "opencode-go") {
+            messageToSend = transformClaudeRequestToOpenAI(messageToSend);
           }
 
           if (requestPath === "/v1/images/generations") {
@@ -8085,7 +8098,11 @@ export class ProxyForwarder {
       );
     }
 
-    if (provider.providerType === "codex" || provider.providerType === "openai-compatible") {
+    if (
+      provider.providerType === "codex" ||
+      provider.providerType === "openai-compatible" ||
+      provider.providerType === "opencode-go"
+    ) {
       overrides.authorization = `Bearer ${outboundKey}`;
     }
 
@@ -8126,14 +8143,22 @@ export class ProxyForwarder {
     }
 
     // 针对 1h 缓存 TTL，补充 Anthropic beta header（避免客户端遗漏）
-    if (session.getCacheTtlResolved && session.getCacheTtlResolved() === "1h") {
+    if (
+      (provider.providerType === "claude" || provider.providerType === "claude-auth") &&
+      session.getCacheTtlResolved &&
+      session.getCacheTtlResolved() === "1h"
+    ) {
       overrides["anthropic-beta"] = mergeAnthropicCacheTtlBetaFlag(
         session.headers.get("anthropic-beta")
       );
     }
 
     const headerProcessor = HeaderProcessor.createForProxy({
-      blacklist: [...OUTBOUND_TRANSPORT_HEADER_BLACKLIST, "x-api-key"],
+      blacklist: [
+        ...OUTBOUND_TRANSPORT_HEADER_BLACKLIST,
+        "x-api-key",
+        ...(provider.providerType === "opencode-go" ? ["anthropic-version", "anthropic-beta"] : []),
+      ],
       preserveClientIpHeaders: preserveClientIp,
       overrides,
     });

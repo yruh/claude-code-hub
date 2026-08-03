@@ -10,6 +10,7 @@ const PROVIDER_TYPES: ProviderType[] = [
   "gemini-cli",
   "gemini",
   "openai-compatible",
+  "opencode-go",
 ];
 
 function isProviderType(value: string | null): value is ProviderType {

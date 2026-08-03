@@ -28,6 +28,7 @@ const parserRegistry: Record<ProviderType, ResponseParser> = {
   "claude-auth": parseAnthropicResponse,
   codex: parseCodexResponse,
   "openai-compatible": parseOpenAIResponse,
+  "opencode-go": parseOpenAIResponse,
   gemini: parseGeminiResponse,
   "gemini-cli": parseGeminiResponse,
 };

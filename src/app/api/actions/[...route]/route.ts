@@ -634,6 +634,7 @@ const ProviderTypeSchema = z.enum([
   "gemini-cli",
   "gemini",
   "openai-compatible",
+  "opencode-go",
 ]);
 
 const { route: getProvidersRoute, handler: getProvidersHandler } = createActionRoute(
