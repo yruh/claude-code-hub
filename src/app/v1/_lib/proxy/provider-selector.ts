@@ -152,9 +152,9 @@ function providerSupportsModel(provider: Provider, requestedModel: string): bool
  * 核心逻辑：确保客户端请求格式与供应商类型兼容，避免格式错配
  *
  * 映射关系：
- * - claude → claude | claude-auth | opencode-go
+ * - claude → claude | claude-auth
  * - response → codex
- * - openai → openai-compatible
+ * - openai → openai-compatible | opencode-go
  * - gemini → gemini
  * - gemini-cli → gemini-cli
  *
@@ -170,15 +170,11 @@ function checkFormatProviderTypeCompatibility(
 ): boolean {
   switch (format) {
     case "claude":
-      return (
-        providerType === "claude" ||
-        providerType === "claude-auth" ||
-        providerType === "opencode-go"
-      );
+      return providerType === "claude" || providerType === "claude-auth";
     case "response":
       return providerType === "codex";
     case "openai":
-      return providerType === "openai-compatible";
+      return providerType === "openai-compatible" || providerType === "opencode-go";
     case "gemini":
       return providerType === "gemini";
     case "gemini-cli":
@@ -201,7 +197,7 @@ function checkSessionProviderCompatibility(
 
   return (
     providerType !== "opencode-go" ||
-    normalizeEndpointPath(session.requestUrl.pathname) === V1_ENDPOINT_PATHS.MESSAGES
+    normalizeEndpointPath(session.requestUrl.pathname) === V1_ENDPOINT_PATHS.CHAT_COMPLETIONS
   );
 }
 
@@ -1308,7 +1304,7 @@ export class ProxyProviderResolver {
           reason = "format_type_mismatch";
           details =
             p.providerType === "opencode-go"
-              ? `供应商类型 opencode-go 仅支持 ${V1_ENDPOINT_PATHS.MESSAGES}`
+              ? `供应商类型 opencode-go 仅支持 ${V1_ENDPOINT_PATHS.CHAT_COMPLETIONS}`
               : `原始格式 ${session.originalFormat} 与供应商类型 ${p.providerType} 不兼容`;
         } else if (requestedModel && !providerSupportsModel(p, requestedModel)) {
           reason = "model_not_allowed";
@@ -1649,7 +1645,11 @@ export class ProxyProviderResolver {
 
     // 将 providerType 映射为 decisionContext 允许的 targetType
     const targetType: "claude" | "codex" | "openai-compatible" | "gemini" | "gemini-cli" =
-      providerType === "claude-auth" || providerType === "opencode-go" ? "claude" : providerType;
+      providerType === "claude-auth"
+        ? "claude"
+        : providerType === "opencode-go"
+          ? "openai-compatible"
+          : providerType;
 
     if (typeFiltered.length === 0) {
       return {

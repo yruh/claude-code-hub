@@ -1,22 +1,24 @@
 type JsonObject = Record<string, unknown>;
 
-interface ClaudeUsage {
+interface AnthropicUsage {
   input_tokens: number;
   output_tokens: number;
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
 }
 
-interface StreamToolState {
-  blockIndex: number;
-  id: string;
-  name: string;
-  started: boolean;
-  pendingArguments: string;
+interface OpenAIUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  prompt_tokens_details: {
+    cached_tokens: number;
+    cache_write_tokens: number;
+  };
 }
 
 const BILLING_HEADER_ONLY = /^\s*x-anthropic-billing-header\s*:[^\r\n]*\s*$/i;
-const THINKING_SIGNATURE = "opencode-go";
+const DEFAULT_MAX_TOKENS = 4096;
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,7 +27,7 @@ function isRecord(value: unknown): value is JsonObject {
 function firstNumber(...values: unknown[]): number {
   for (const value of values) {
     if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
+      return Math.max(0, value);
     }
   }
   return 0;
@@ -65,370 +67,129 @@ export function stripVolatileCch(text: string): string {
     .replace(/;[ \t]*(?=\r?$)/gm, "");
 }
 
-function normalizeSystemText(system: unknown): string | null {
-  if (typeof system === "string") {
-    if (BILLING_HEADER_ONLY.test(system)) {
+function stableSystemText(value: unknown): string | null {
+  if (typeof value === "string") {
+    if (BILLING_HEADER_ONLY.test(value)) {
       return null;
     }
-    const stable = stripVolatileCch(system);
+    const stable = stripVolatileCch(value);
     return stable.length > 0 ? stable : null;
   }
 
-  if (!Array.isArray(system)) {
-    return null;
-  }
-
-  const parts: string[] = [];
-  for (const rawPart of system) {
-    if (!isRecord(rawPart) || rawPart.type !== "text" || typeof rawPart.text !== "string") {
-      continue;
-    }
-    if (BILLING_HEADER_ONLY.test(rawPart.text)) {
-      continue;
-    }
-    const stable = stripVolatileCch(rawPart.text);
-    if (stable.length > 0) {
-      parts.push(stable);
-    }
-  }
-
-  return parts.length > 0 ? parts.join("\n\n") : null;
-}
-
-function normalizeRole(role: unknown): string {
-  if (typeof role !== "string") {
-    return "user";
-  }
-  return role.trim().toLowerCase() === "system" ? "user" : role.trim().toLowerCase();
-}
-
-function convertImageBlock(block: JsonObject): JsonObject | null {
-  const source = isRecord(block.source) ? block.source : null;
-  if (!source || typeof source.type !== "string") {
-    return null;
-  }
-
-  let url = "";
-  if (source.type === "base64" && typeof source.data === "string") {
-    const mediaType =
-      typeof source.media_type === "string" ? source.media_type : "application/octet-stream";
-    url = `data:${mediaType};base64,${source.data}`;
-  } else if (source.type === "url" && typeof source.url === "string") {
-    url = source.url;
-  }
-
-  return url
-    ? {
-        type: "image_url",
-        image_url: { url, detail: "auto" },
-      }
-    : null;
-}
-
-function toolResultText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (!Array.isArray(content)) {
-    return content === undefined ? "" : safeJsonStringify(content);
-  }
-
-  return content
-    .map((item) => {
-      if (typeof item === "string") {
-        return item;
-      }
-      if (isRecord(item) && typeof item.text === "string") {
-        return item.text;
-      }
-      return safeJsonStringify(item);
-    })
-    .join("");
-}
-
-function appendUserMessage(output: JsonObject[], role: string, content: unknown): void {
-  if (typeof content === "string") {
-    output.push({ role, content });
-    return;
-  }
-
-  if (!Array.isArray(content)) {
-    output.push({ role, content: "" });
-    return;
-  }
-
-  const contentParts: JsonObject[] = [];
-  const toolResults: JsonObject[] = [];
-  for (const rawBlock of content) {
-    if (!isRecord(rawBlock)) {
-      continue;
-    }
-
-    if (rawBlock.type === "tool_result") {
-      toolResults.push({
-        role: "tool",
-        content: toolResultText(rawBlock.content),
-        tool_call_id: typeof rawBlock.tool_use_id === "string" ? rawBlock.tool_use_id : "",
-      });
-      continue;
-    }
-
-    if (rawBlock.type === "image") {
-      const image = convertImageBlock(rawBlock);
-      if (image) {
-        contentParts.push(image);
-      }
-      continue;
-    }
-
-    if (rawBlock.type === "text" && typeof rawBlock.text === "string") {
-      contentParts.push({ type: "text", text: rawBlock.text });
-    }
-  }
-
-  output.push(...toolResults);
-  if (contentParts.length > 0 || toolResults.length === 0) {
-    output.push({ role, content: contentParts });
-  }
-}
-
-function appendAssistantMessage(output: JsonObject[], content: unknown): void {
-  if (typeof content === "string") {
-    output.push({ role: "assistant", content });
-    return;
-  }
-
-  if (!Array.isArray(content)) {
-    output.push({ role: "assistant", content: "" });
-    return;
-  }
-
-  const textParts: string[] = [];
-  const thinkingParts: string[] = [];
-  const toolCalls: JsonObject[] = [];
-
-  for (const rawBlock of content) {
-    if (!isRecord(rawBlock)) {
-      continue;
-    }
-    if (rawBlock.type === "text" && typeof rawBlock.text === "string") {
-      textParts.push(rawBlock.text);
-    } else if (rawBlock.type === "thinking" && typeof rawBlock.thinking === "string") {
-      thinkingParts.push(rawBlock.thinking);
-    } else if (rawBlock.type === "tool_use") {
-      if (typeof rawBlock.thinking === "string" && rawBlock.thinking.length > 0) {
-        thinkingParts.push(rawBlock.thinking);
-      }
-      toolCalls.push({
-        id: typeof rawBlock.id === "string" ? rawBlock.id : "",
-        type: "function",
-        function: {
-          name: typeof rawBlock.name === "string" ? rawBlock.name : "",
-          arguments: safeJsonStringify(rawBlock.input ?? {}),
-        },
-      });
-    }
-  }
-
-  output.push({
-    role: "assistant",
-    content: textParts.length > 0 ? textParts.join("") : null,
-    ...(thinkingParts.length > 0 ? { reasoning_content: thinkingParts.join("") } : {}),
-    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-  });
-}
-
-export function transformClaudeRequestToOpenAI(request: JsonObject): JsonObject {
-  const messages: JsonObject[] = [];
-  const systemText = normalizeSystemText(request.system);
-  if (systemText !== null) {
-    messages.push({ role: "system", content: systemText });
-  }
-
-  if (Array.isArray(request.messages)) {
-    for (const rawMessage of request.messages) {
-      if (!isRecord(rawMessage)) {
-        continue;
-      }
-      const role = normalizeRole(rawMessage.role);
-      if (role === "assistant") {
-        appendAssistantMessage(messages, rawMessage.content);
-      } else {
-        appendUserMessage(messages, "user", rawMessage.content);
-      }
-    }
-  }
-
-  const output: JsonObject = {
-    model: typeof request.model === "string" ? request.model : "",
-    messages,
-    stream: request.stream === true,
-  };
-
-  if (Array.isArray(request.tools)) {
-    const tools = request.tools.flatMap((rawTool) => {
-      if (!isRecord(rawTool) || typeof rawTool.name !== "string") {
-        return [];
-      }
-      if (typeof rawTool.type === "string" && rawTool.type.startsWith("web_search_")) {
-        return [];
-      }
-      return [
-        {
-          type: "function",
-          function: {
-            name: rawTool.name,
-            ...(typeof rawTool.description === "string"
-              ? { description: rawTool.description }
-              : {}),
-            parameters: isRecord(rawTool.input_schema)
-              ? rawTool.input_schema
-              : { type: "object", properties: {} },
-          },
-        },
-      ];
-    });
-    if (tools.length > 0) {
-      output.tools = tools;
-    }
-  }
-
-  if (typeof request.tool_choice === "string") {
-    output.tool_choice = request.tool_choice;
-  } else if (isRecord(request.tool_choice)) {
-    const type = request.tool_choice.type;
-    if (type === "auto") {
-      output.tool_choice = "auto";
-    } else if (type === "any") {
-      output.tool_choice = "required";
-    } else if (type === "tool" && typeof request.tool_choice.name === "string") {
-      output.tool_choice = {
-        type: "function",
-        function: { name: request.tool_choice.name },
-      };
-    }
-    if (request.tool_choice.disable_parallel_tool_use === true) {
-      output.parallel_tool_calls = false;
-    }
-  }
-
-  if (typeof request.max_tokens === "number") {
-    output.max_tokens = request.max_tokens;
-  }
-  if (typeof request.temperature === "number") {
-    output.temperature = request.temperature;
-  }
-  if (typeof request.top_p === "number") {
-    output.top_p = request.top_p;
-  }
-  if (Array.isArray(request.stop_sequences) && request.stop_sequences.length > 0) {
-    output.stop = request.stop_sequences;
-  }
-  if (request.stream === true) {
-    output.stream_options = { include_usage: true };
-  }
-
-  return output;
-}
-
-export function convertOpenAIUsage(value: unknown): ClaudeUsage {
-  const usage = isRecord(value) ? value : {};
-  const details = isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {};
-  const promptTokens = firstNumber(usage.prompt_tokens, usage.input_tokens);
-  const cacheRead = firstNumber(
-    details.cached_tokens,
-    usage.prompt_cache_hit_tokens,
-    usage.cache_read_input_tokens
-  );
-  const cacheWrite = firstNumber(
-    details.cache_write_tokens,
-    usage.prompt_cache_miss_tokens,
-    usage.cache_creation_input_tokens
-  );
-
-  return {
-    input_tokens: Math.max(0, promptTokens - cacheRead - cacheWrite),
-    output_tokens: firstNumber(usage.completion_tokens, usage.output_tokens),
-    cache_creation_input_tokens: cacheWrite,
-    cache_read_input_tokens: cacheRead,
-  };
-}
-
-function extractTextContent(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
   if (!Array.isArray(value)) {
-    return "";
+    return null;
   }
-  return value
+
+  const text = value
     .map((part) => {
+      if (typeof part === "string") {
+        return part;
+      }
       if (!isRecord(part)) {
         return "";
       }
-      if ((part.type === "text" || part.type === "output_text") && typeof part.text === "string") {
-        return part.text;
-      }
-      return "";
+      return typeof part.text === "string" ? part.text : "";
     })
-    .join("");
+    .filter(Boolean)
+    .join("\n\n");
+
+  return stableSystemText(text);
 }
 
-function toClaudeMessageId(value: unknown): string {
-  if (typeof value === "string" && value.startsWith("msg_")) {
-    return value;
-  }
-  const suffix = typeof value === "string" ? value.replace(/[^a-zA-Z0-9_-]/g, "_") : "opencode_go";
-  return `msg_${suffix || "opencode_go"}`;
+function parseDataUrl(url: string): { mediaType: string; data: string } | null {
+  const match = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(url);
+  return match ? { mediaType: match[1], data: match[2] } : null;
 }
 
-function mapStopReason(value: unknown, hasToolCalls = false): string {
-  if (value === "length") {
-    return "max_tokens";
+function convertImageUrl(value: unknown): JsonObject | null {
+  const url =
+    typeof value === "string"
+      ? value
+      : isRecord(value) && typeof value.url === "string"
+        ? value.url
+        : "";
+  if (!url) {
+    return null;
   }
-  if (value === "tool_calls" || value === "function_call" || hasToolCalls) {
-    return "tool_use";
-  }
-  return "end_turn";
-}
 
-export function transformOpenAIResponseToClaude(value: unknown, fallbackModel = ""): JsonObject {
-  if (!isRecord(value)) {
-    throw new Error("OpenCode Go returned a non-object response");
-  }
-  if (isRecord(value.error)) {
+  const dataUrl = parseDataUrl(url);
+  if (dataUrl) {
+    const blockType = dataUrl.mediaType === "application/pdf" ? "document" : "image";
     return {
-      type: "error",
-      error: {
-        type: typeof value.error.type === "string" ? value.error.type : "api_error",
-        message:
-          typeof value.error.message === "string"
-            ? value.error.message
-            : "OpenCode Go upstream error",
+      type: blockType,
+      source: {
+        type: "base64",
+        media_type: dataUrl.mediaType,
+        data: dataUrl.data,
       },
     };
   }
 
-  const choice = Array.isArray(value.choices) && isRecord(value.choices[0]) ? value.choices[0] : {};
-  const message = isRecord(choice.message) ? choice.message : {};
-  const content: JsonObject[] = [];
-  const reasoning = firstString(message.reasoning_content, message.reasoning, message.thinking);
-  if (reasoning) {
-    content.push({ type: "thinking", thinking: reasoning, signature: THINKING_SIGNATURE });
+  return {
+    type: "image",
+    source: { type: "url", url },
+  };
+}
+
+function convertOpenAIContent(value: unknown): JsonObject[] {
+  if (typeof value === "string") {
+    return value.length > 0 ? [{ type: "text", text: value }] : [];
+  }
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  const text = extractTextContent(message.content);
-  if (text) {
-    content.push({ type: "text", text });
-  }
+  const blocks: JsonObject[] = [];
+  for (const part of value) {
+    if (typeof part === "string") {
+      if (part.length > 0) {
+        blocks.push({ type: "text", text: part });
+      }
+      continue;
+    }
+    if (!isRecord(part)) {
+      continue;
+    }
 
+    if (
+      (part.type === "text" || part.type === "input_text" || part.type === "output_text") &&
+      typeof part.text === "string"
+    ) {
+      if (part.text.length > 0) {
+        blocks.push({ type: "text", text: part.text });
+      }
+      continue;
+    }
+
+    if (part.type === "image_url" || part.type === "input_image") {
+      const image = convertImageUrl(part.image_url);
+      if (image) {
+        blocks.push(image);
+      }
+    }
+  }
+  return blocks;
+}
+
+function appendClaudeMessage(
+  messages: JsonObject[],
+  role: "user" | "assistant",
+  blocks: JsonObject[]
+) {
+  const content = blocks.length > 0 ? blocks : [{ type: "text", text: "..." }];
+  messages.push({ role, content });
+}
+
+function convertAssistantMessage(message: JsonObject): JsonObject[] {
+  const blocks = convertOpenAIContent(message.content);
   const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
   for (const [index, rawToolCall] of rawToolCalls.entries()) {
     if (!isRecord(rawToolCall)) {
       continue;
     }
     const fn = isRecord(rawToolCall.function) ? rawToolCall.function : {};
-    content.push({
+    blocks.push({
       type: "tool_use",
       id:
         typeof rawToolCall.id === "string" && rawToolCall.id
@@ -439,41 +200,359 @@ export function transformOpenAIResponseToClaude(value: unknown, fallbackModel = 
     });
   }
 
+  if (isRecord(message.function_call)) {
+    blocks.push({
+      type: "tool_use",
+      id: "toolu_opencode_go_function",
+      name: typeof message.function_call.name === "string" ? message.function_call.name : "",
+      input: parseToolArguments(message.function_call.arguments),
+    });
+  }
+
+  return blocks;
+}
+
+function convertToolResult(message: JsonObject): JsonObject {
+  const content = convertOpenAIContent(message.content);
   return {
-    id: toClaudeMessageId(value.id),
-    type: "message",
-    role: "assistant",
-    model: typeof value.model === "string" ? value.model : fallbackModel,
-    content,
-    stop_reason: mapStopReason(choice.finish_reason, rawToolCalls.length > 0),
-    stop_sequence: null,
-    usage: convertOpenAIUsage(value.usage),
+    type: "tool_result",
+    tool_use_id:
+      typeof message.tool_call_id === "string" && message.tool_call_id
+        ? message.tool_call_id
+        : typeof message.name === "string"
+          ? message.name
+          : "toolu_opencode_go_unknown",
+    content: content.length > 0 ? content : [{ type: "text", text: "" }],
   };
 }
 
-function firstString(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === "string" && value.length > 0) {
-      return value;
+function convertTools(value: unknown): JsonObject[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((rawTool) => {
+    if (!isRecord(rawTool)) {
+      return [];
+    }
+    const fn = isRecord(rawTool.function) ? rawTool.function : rawTool;
+    if (typeof fn.name !== "string" || !fn.name) {
+      return [];
+    }
+    return [
+      {
+        name: fn.name,
+        ...(typeof fn.description === "string" ? { description: fn.description } : {}),
+        input_schema: isRecord(fn.parameters) ? fn.parameters : { type: "object", properties: {} },
+      },
+    ];
+  });
+}
+
+function convertToolChoice(value: unknown, disableParallel: boolean): JsonObject | null {
+  if (value === "auto") {
+    return { type: "auto", ...(disableParallel ? { disable_parallel_tool_use: true } : {}) };
+  }
+  if (value === "required") {
+    return { type: "any", ...(disableParallel ? { disable_parallel_tool_use: true } : {}) };
+  }
+  if (!isRecord(value)) {
+    return disableParallel ? { type: "auto", disable_parallel_tool_use: true } : null;
+  }
+
+  const fn = isRecord(value.function) ? value.function : value;
+  if (typeof fn.name !== "string" || !fn.name) {
+    return null;
+  }
+  return {
+    type: "tool",
+    name: fn.name,
+    ...(disableParallel ? { disable_parallel_tool_use: true } : {}),
+  };
+}
+
+function resolveThinking(request: JsonObject, maxTokens: number): JsonObject | null {
+  const reasoning = isRecord(request.reasoning) ? request.reasoning : {};
+  const effort =
+    typeof request.reasoning_effort === "string"
+      ? request.reasoning_effort
+      : typeof reasoning.effort === "string"
+        ? reasoning.effort
+        : "";
+  const budgets: Record<string, number> = {
+    low: 1280,
+    medium: 2048,
+    high: 4096,
+    xhigh: 8192,
+  };
+  const requestedBudget = firstNumber(
+    reasoning.max_tokens,
+    reasoning.budget_tokens,
+    budgets[effort]
+  );
+  if (requestedBudget < 1024 || maxTokens <= 1024) {
+    return null;
+  }
+  return { type: "enabled", budget_tokens: Math.min(requestedBudget, maxTokens - 1) };
+}
+
+export function transformOpenAIRequestToClaude(request: JsonObject): JsonObject {
+  const messages: JsonObject[] = [];
+  const system: JsonObject[] = [];
+  let conversationStarted = false;
+
+  if (Array.isArray(request.messages)) {
+    for (const rawMessage of request.messages) {
+      if (!isRecord(rawMessage)) {
+        continue;
+      }
+      const role = typeof rawMessage.role === "string" ? rawMessage.role.toLowerCase() : "user";
+
+      if (role === "system" || role === "developer") {
+        const stable = stableSystemText(rawMessage.content);
+        if (!stable) {
+          continue;
+        }
+        if (!conversationStarted) {
+          system.push({ type: "text", text: stable });
+        } else {
+          appendClaudeMessage(messages, "user", [{ type: "text", text: stable }]);
+        }
+        continue;
+      }
+
+      conversationStarted = true;
+      if (role === "assistant") {
+        appendClaudeMessage(messages, "assistant", convertAssistantMessage(rawMessage));
+      } else if (role === "tool" || role === "function") {
+        appendClaudeMessage(messages, "user", [convertToolResult(rawMessage)]);
+      } else {
+        appendClaudeMessage(messages, "user", convertOpenAIContent(rawMessage.content));
+      }
     }
   }
-  return "";
+
+  if (messages[0]?.role === "assistant") {
+    messages.unshift({ role: "user", content: [{ type: "text", text: "..." }] });
+  }
+  if (messages.length === 0) {
+    messages.push({ role: "user", content: [{ type: "text", text: "..." }] });
+  }
+
+  const maxTokens = Math.max(
+    1,
+    firstNumber(request.max_completion_tokens, request.max_tokens) || DEFAULT_MAX_TOKENS
+  );
+  const output: JsonObject = {
+    model: typeof request.model === "string" ? request.model : "",
+    messages,
+    max_tokens: maxTokens,
+    stream: request.stream === true,
+  };
+
+  if (system.length > 0) {
+    output.system = system;
+  }
+
+  const tools = convertTools(request.tools);
+  if (tools.length > 0 && request.tool_choice !== "none") {
+    output.tools = tools;
+    const toolChoice = convertToolChoice(
+      request.tool_choice,
+      request.parallel_tool_calls === false
+    );
+    if (toolChoice) {
+      output.tool_choice = toolChoice;
+    }
+  }
+
+  if (typeof request.temperature === "number") {
+    output.temperature = request.temperature;
+  }
+  if (typeof request.top_p === "number") {
+    output.top_p = request.top_p;
+  }
+  if (typeof request.top_k === "number") {
+    output.top_k = request.top_k;
+  }
+
+  const stop = typeof request.stop === "string" ? [request.stop] : request.stop;
+  if (Array.isArray(stop)) {
+    const stopSequences = stop.filter((item): item is string => typeof item === "string" && !!item);
+    if (stopSequences.length > 0) {
+      output.stop_sequences = stopSequences;
+    }
+  }
+
+  const userId =
+    typeof request.user === "string"
+      ? request.user
+      : isRecord(request.metadata) && typeof request.metadata.user_id === "string"
+        ? request.metadata.user_id
+        : null;
+  if (userId) {
+    output.metadata = { user_id: userId };
+  }
+
+  const thinking = resolveThinking(request, maxTokens);
+  if (thinking) {
+    output.thinking = thinking;
+    output.temperature = 1;
+  }
+
+  return output;
 }
 
-function formatSse(event: string, data: JsonObject): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+export function convertAnthropicUsage(value: unknown): OpenAIUsage {
+  const usage = isRecord(value) ? value : {};
+  const input = firstNumber(usage.input_tokens);
+  const output = firstNumber(usage.output_tokens);
+  const cacheRead = firstNumber(usage.cache_read_input_tokens);
+  const cacheWrite = firstNumber(usage.cache_creation_input_tokens);
+  const promptTokens = input + cacheRead + cacheWrite;
+
+  return {
+    prompt_tokens: promptTokens,
+    completion_tokens: output,
+    total_tokens: promptTokens + output,
+    prompt_tokens_details: {
+      cached_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+    },
+  };
 }
 
-class OpenAIToClaudeStreamState {
-  private started = false;
-  private stopped = false;
-  private nextBlockIndex = 0;
-  private activeNarrative: { type: "text" | "thinking"; index: number } | null = null;
-  private readonly tools = new Map<number, StreamToolState>();
-  private messageId = "msg_opencode_go";
+function mapAnthropicStopReason(value: unknown): string | null {
+  if (value === "max_tokens") {
+    return "length";
+  }
+  if (value === "tool_use") {
+    return "tool_calls";
+  }
+  if (value === "refusal") {
+    return "content_filter";
+  }
+  if (value === "end_turn" || value === "stop_sequence" || value === "pause_turn") {
+    return "stop";
+  }
+  return null;
+}
+
+function toOpenAIError(value: JsonObject): JsonObject {
+  const error = isRecord(value.error) ? value.error : value;
+  return {
+    error: {
+      message:
+        typeof error.message === "string" ? error.message : "Anthropic Messages upstream error",
+      type: typeof error.type === "string" ? error.type : "api_error",
+      code: typeof error.code === "string" ? error.code : null,
+      param: null,
+    },
+  };
+}
+
+export function transformClaudeResponseToOpenAI(value: unknown, fallbackModel = ""): JsonObject {
+  if (!isRecord(value)) {
+    throw new Error("OpenCode Go returned a non-object Anthropic response");
+  }
+  if (value.type === "error" || isRecord(value.error)) {
+    return toOpenAIError(value);
+  }
+
+  const text: string[] = [];
+  const reasoning: string[] = [];
+  const toolCalls: JsonObject[] = [];
+  if (Array.isArray(value.content)) {
+    for (const rawBlock of value.content) {
+      if (!isRecord(rawBlock)) {
+        continue;
+      }
+      if (rawBlock.type === "text" && typeof rawBlock.text === "string") {
+        text.push(rawBlock.text);
+      } else if (rawBlock.type === "thinking" && typeof rawBlock.thinking === "string") {
+        reasoning.push(rawBlock.thinking);
+      } else if (rawBlock.type === "tool_use") {
+        toolCalls.push({
+          id: typeof rawBlock.id === "string" ? rawBlock.id : "",
+          type: "function",
+          function: {
+            name: typeof rawBlock.name === "string" ? rawBlock.name : "",
+            arguments: safeJsonStringify(rawBlock.input ?? {}),
+          },
+        });
+      }
+    }
+  }
+
+  const message: JsonObject = {
+    role: "assistant",
+    content: text.length > 0 ? text.join("") : null,
+  };
+  if (reasoning.length > 0) {
+    message.reasoning_content = reasoning.join("");
+  }
+  if (toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
+
+  return {
+    id: typeof value.id === "string" ? value.id : "chatcmpl-opencode-go",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: typeof value.model === "string" ? value.model : fallbackModel,
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: mapAnthropicStopReason(value.stop_reason),
+        logprobs: null,
+      },
+    ],
+    usage: convertAnthropicUsage(value.usage),
+  };
+}
+
+function mergeAnthropicUsage(current: AnthropicUsage, value: unknown): AnthropicUsage {
+  const usage = isRecord(value) ? value : {};
+  return {
+    input_tokens:
+      typeof usage.input_tokens === "number"
+        ? firstNumber(usage.input_tokens)
+        : current.input_tokens,
+    output_tokens:
+      typeof usage.output_tokens === "number"
+        ? firstNumber(usage.output_tokens)
+        : current.output_tokens,
+    cache_creation_input_tokens:
+      typeof usage.cache_creation_input_tokens === "number"
+        ? firstNumber(usage.cache_creation_input_tokens)
+        : current.cache_creation_input_tokens,
+    cache_read_input_tokens:
+      typeof usage.cache_read_input_tokens === "number"
+        ? firstNumber(usage.cache_read_input_tokens)
+        : current.cache_read_input_tokens,
+  };
+}
+
+function emptyAnthropicUsage(): AnthropicUsage {
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  };
+}
+
+class ClaudeToOpenAIStreamState {
+  private readonly toolIndexes = new Map<number, number>();
+  private messageId = "chatcmpl-opencode-go";
   private model: string;
-  private finishReason: unknown = null;
-  private usage: ClaudeUsage = convertOpenAIUsage(undefined);
+  private created = Math.floor(Date.now() / 1000);
+  private usage = emptyAnthropicUsage();
+  private nextToolIndex = 0;
+  private started = false;
+  private finishEmitted = false;
+  private stopped = false;
+  private stopReason: unknown = null;
 
   constructor(fallbackModel: string) {
     this.model = fallbackModel;
@@ -483,105 +562,40 @@ class OpenAIToClaudeStreamState {
     if (this.stopped) {
       return [];
     }
-    if (isRecord(data.error)) {
+    if (data.type === "error" || isRecord(data.error)) {
       this.stopped = true;
-      return [
-        formatSse("error", {
-          type: "error",
-          error: {
-            type: typeof data.error.type === "string" ? data.error.type : "api_error",
-            message:
-              typeof data.error.message === "string"
-                ? data.error.message
-                : "OpenCode Go upstream error",
-          },
-        }),
-      ];
+      return [formatOpenAISse(toOpenAIError(data))];
     }
 
     const output: string[] = [];
-    if (typeof data.id === "string") {
-      this.messageId = toClaudeMessageId(data.id);
-    }
-    if (typeof data.model === "string") {
-      this.model = data.model;
-    }
-    if (isRecord(data.usage)) {
-      this.usage = convertOpenAIUsage(data.usage);
-    }
-    this.ensureStarted(output);
-
-    const choice =
-      Array.isArray(data.choices) && isRecord(data.choices[0]) ? data.choices[0] : null;
-    if (!choice) {
+    if (data.type === "message_start" && isRecord(data.message)) {
+      const message = data.message;
+      if (typeof message.id === "string") {
+        this.messageId = message.id;
+      }
+      if (typeof message.model === "string") {
+        this.model = message.model;
+      }
+      this.usage = mergeAnthropicUsage(this.usage, message.usage);
+      this.ensureStarted(output);
       return output;
     }
-    const delta = isRecord(choice.delta) ? choice.delta : {};
 
-    const reasoning = firstString(delta.reasoning_content, delta.reasoning, delta.thinking);
-    if (reasoning) {
-      this.appendNarrative("thinking", reasoning, output);
-    }
-
-    const text = extractTextContent(delta.content);
-    if (text) {
-      this.appendNarrative("text", text, output);
-    }
-
-    if (Array.isArray(delta.tool_calls)) {
-      this.closeNarrative(output);
-      for (const [position, rawToolCall] of delta.tool_calls.entries()) {
-        if (!isRecord(rawToolCall)) {
-          continue;
-        }
-        const upstreamIndex = typeof rawToolCall.index === "number" ? rawToolCall.index : position;
-        const fn = isRecord(rawToolCall.function) ? rawToolCall.function : {};
-        let tool = this.tools.get(upstreamIndex);
-        if (!tool) {
-          tool = {
-            blockIndex: this.nextBlockIndex++,
-            id:
-              typeof rawToolCall.id === "string" && rawToolCall.id
-                ? rawToolCall.id
-                : `toolu_opencode_go_${upstreamIndex}`,
-            name: "",
-            started: false,
-            pendingArguments: "",
-          };
-          this.tools.set(upstreamIndex, tool);
-        }
-
-        if (typeof rawToolCall.id === "string" && rawToolCall.id) {
-          tool.id = rawToolCall.id;
-        }
-        if (typeof fn.name === "string" && fn.name) {
-          tool.name = mergeStreamFragment(tool.name, fn.name);
-        }
-        const argumentsDelta = typeof fn.arguments === "string" ? fn.arguments : "";
-        if (!tool.started) {
-          tool.pendingArguments += argumentsDelta;
-          if (tool.name) {
-            output.push(
-              formatSse("content_block_start", {
-                type: "content_block_start",
-                index: tool.blockIndex,
-                content_block: { type: "tool_use", id: tool.id, name: tool.name, input: {} },
-              })
-            );
-            tool.started = true;
-            if (tool.pendingArguments) {
-              output.push(this.toolArgumentsDelta(tool, tool.pendingArguments));
-              tool.pendingArguments = "";
-            }
-          }
-        } else if (argumentsDelta) {
-          output.push(this.toolArgumentsDelta(tool, argumentsDelta));
-        }
+    this.ensureStarted(output);
+    if (data.type === "content_block_start" && isRecord(data.content_block)) {
+      this.consumeBlockStart(data, data.content_block, output);
+    } else if (data.type === "content_block_delta" && isRecord(data.delta)) {
+      this.consumeBlockDelta(data, data.delta, output);
+    } else if (data.type === "message_delta") {
+      if (isRecord(data.delta) && data.delta.stop_reason !== undefined) {
+        this.stopReason = data.delta.stop_reason;
       }
-    }
-
-    if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
-      this.finishReason = choice.finish_reason;
+      this.usage = mergeAnthropicUsage(this.usage, data.usage);
+      this.emitFinish(output);
+    } else if (data.type === "message_stop") {
+      this.emitFinish(output);
+      output.push("data: [DONE]\n\n");
+      this.stopped = true;
     }
     return output;
   }
@@ -592,134 +606,116 @@ class OpenAIToClaudeStreamState {
     }
     const output: string[] = [];
     this.ensureStarted(output);
-    this.closeNarrative(output);
-    for (const tool of [...this.tools.values()].sort((a, b) => a.blockIndex - b.blockIndex)) {
-      if (!tool.started) {
-        output.push(
-          formatSse("content_block_start", {
-            type: "content_block_start",
-            index: tool.blockIndex,
-            content_block: { type: "tool_use", id: tool.id, name: tool.name, input: {} },
-          })
-        );
-        tool.started = true;
-        if (tool.pendingArguments) {
-          output.push(this.toolArgumentsDelta(tool, tool.pendingArguments));
-        }
-      }
-      output.push(
-        formatSse("content_block_stop", {
-          type: "content_block_stop",
-          index: tool.blockIndex,
-        })
-      );
-    }
-
-    output.push(
-      formatSse("message_delta", {
-        type: "message_delta",
-        delta: {
-          stop_reason: mapStopReason(this.finishReason, this.tools.size > 0),
-          stop_sequence: null,
-        },
-        usage: this.usage,
-      }),
-      formatSse("message_stop", { type: "message_stop" })
-    );
+    this.emitFinish(output);
+    output.push("data: [DONE]\n\n");
     this.stopped = true;
     return output;
   }
 
-  private ensureStarted(output: string[]): void {
+  private consumeBlockStart(data: JsonObject, block: JsonObject, output: string[]) {
+    if (block.type === "text" && typeof block.text === "string" && block.text) {
+      output.push(this.chunk({ content: block.text }));
+      return;
+    }
+    if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
+      output.push(this.chunk({ reasoning_content: block.thinking }));
+      return;
+    }
+    if (block.type !== "tool_use") {
+      return;
+    }
+
+    const blockIndex = typeof data.index === "number" ? data.index : this.nextToolIndex;
+    const toolIndex = this.nextToolIndex++;
+    this.toolIndexes.set(blockIndex, toolIndex);
+    const argumentsText =
+      isRecord(block.input) && Object.keys(block.input).length > 0
+        ? safeJsonStringify(block.input)
+        : "";
+    output.push(
+      this.chunk({
+        tool_calls: [
+          {
+            index: toolIndex,
+            id: typeof block.id === "string" ? block.id : "",
+            type: "function",
+            function: {
+              name: typeof block.name === "string" ? block.name : "",
+              arguments: argumentsText,
+            },
+          },
+        ],
+      })
+    );
+  }
+
+  private consumeBlockDelta(data: JsonObject, delta: JsonObject, output: string[]) {
+    if (delta.type === "text_delta" && typeof delta.text === "string") {
+      output.push(this.chunk({ content: delta.text }));
+      return;
+    }
+    if (delta.type === "thinking_delta" && typeof delta.thinking === "string") {
+      output.push(this.chunk({ reasoning_content: delta.thinking }));
+      return;
+    }
+    if (delta.type !== "input_json_delta" || typeof delta.partial_json !== "string") {
+      return;
+    }
+
+    const blockIndex = typeof data.index === "number" ? data.index : 0;
+    const toolIndex = this.toolIndexes.get(blockIndex) ?? blockIndex;
+    output.push(
+      this.chunk({
+        tool_calls: [
+          {
+            index: toolIndex,
+            function: { arguments: delta.partial_json },
+          },
+        ],
+      })
+    );
+  }
+
+  private ensureStarted(output: string[]) {
     if (this.started) {
       return;
     }
-    output.push(
-      formatSse("message_start", {
-        type: "message_start",
-        message: {
-          id: this.messageId,
-          type: "message",
-          role: "assistant",
-          model: this.model,
-          content: [],
-          stop_reason: null,
-          stop_sequence: null,
-          usage: convertOpenAIUsage(undefined),
-        },
-      })
-    );
+    output.push(this.chunk({ role: "assistant", content: "" }));
     this.started = true;
   }
 
-  private appendNarrative(type: "text" | "thinking", value: string, output: string[]): void {
-    if (this.activeNarrative?.type !== type) {
-      this.closeNarrative(output);
-      const index = this.nextBlockIndex++;
-      this.activeNarrative = { type, index };
-      output.push(
-        formatSse("content_block_start", {
-          type: "content_block_start",
-          index,
-          content_block:
-            type === "thinking"
-              ? { type: "thinking", thinking: "", signature: "" }
-              : { type: "text", text: "" },
-        })
-      );
-    }
-
-    output.push(
-      formatSse("content_block_delta", {
-        type: "content_block_delta",
-        index: this.activeNarrative.index,
-        delta:
-          type === "thinking"
-            ? { type: "thinking_delta", thinking: value }
-            : { type: "text_delta", text: value },
-      })
-    );
-  }
-
-  private closeNarrative(output: string[]): void {
-    if (!this.activeNarrative) {
+  private emitFinish(output: string[]) {
+    if (this.finishEmitted) {
       return;
     }
-    if (this.activeNarrative.type === "thinking") {
-      output.push(
-        formatSse("content_block_delta", {
-          type: "content_block_delta",
-          index: this.activeNarrative.index,
-          delta: { type: "signature_delta", signature: THINKING_SIGNATURE },
-        })
-      );
-    }
     output.push(
-      formatSse("content_block_stop", {
-        type: "content_block_stop",
-        index: this.activeNarrative.index,
-      })
+      this.chunk(
+        {},
+        mapAnthropicStopReason(this.stopReason) ?? "stop",
+        convertAnthropicUsage(this.usage)
+      )
     );
-    this.activeNarrative = null;
+    this.finishEmitted = true;
   }
 
-  private toolArgumentsDelta(tool: StreamToolState, value: string): string {
-    return formatSse("content_block_delta", {
-      type: "content_block_delta",
-      index: tool.blockIndex,
-      delta: { type: "input_json_delta", partial_json: value },
+  private chunk(
+    delta: JsonObject,
+    finishReason: string | null = null,
+    usage?: OpenAIUsage
+  ): string {
+    return formatOpenAISse({
+      id: this.messageId,
+      object: "chat.completion.chunk",
+      created: this.created,
+      model: this.model,
+      choices: [{ index: 0, delta, finish_reason: finishReason, logprobs: null }],
+      ...(usage ? { usage } : {}),
     });
   }
 }
 
-function mergeStreamFragment(current: string, incoming: string): string {
-  if (!current || incoming.startsWith(current)) {
-    return incoming;
-  }
-  if (current.endsWith(incoming)) {
-    return current;
-  }
-  return current + incoming;
+function formatOpenAISse(data: JsonObject): string {
+  return `data: ${JSON.stringify(data)}\n\n`;
 }
 
 function findFrameBoundary(buffer: string): { index: number; length: number } | null {
@@ -735,13 +731,13 @@ function parseSseData(frame: string): string | null {
   return values.length > 0 ? values.join("\n") : null;
 }
 
-export function createOpenAIToClaudeStreamTransform(
+export function createClaudeToOpenAIStreamTransform(
   fallbackModel = "",
   onUpstreamChunk?: (chunk: Uint8Array) => void
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  const state = new OpenAIToClaudeStreamState(fallbackModel);
+  const state = new ClaudeToOpenAIStreamState(fallbackModel);
   let buffer = "";
 
   const emit = (controller: TransformStreamDefaultController<Uint8Array>, chunks: string[]) => {
@@ -768,7 +764,7 @@ export function createOpenAIToClaudeStreamTransform(
         emit(controller, state.consume(parsed));
       }
     } catch {
-      // Wait for a complete SSE frame; invalid upstream frames are ignored.
+      // Invalid upstream frames are ignored after the content gate has committed.
     }
   };
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  convertOpenAIUsage,
-  createOpenAIToClaudeStreamTransform,
+  convertAnthropicUsage,
+  createClaudeToOpenAIStreamTransform,
   stripVolatileCch,
-  transformClaudeRequestToOpenAI,
-  transformOpenAIResponseToClaude,
+  transformClaudeResponseToOpenAI,
+  transformOpenAIRequestToClaude,
 } from "./opencode-go-converter";
 
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
@@ -12,101 +12,97 @@ async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
 }
 
 describe("OpenCode Go converter", () => {
-  describe("Claude request conversion", () => {
-    it("removes a billing-only system block and rewrites historical system messages", () => {
+  describe("OpenAI request conversion", () => {
+    it("stabilizes leading system content and appends later system reminders as user messages", () => {
       const input = {
         model: "claude-sonnet-4-5",
-        system: [
-          {
-            type: "text",
-            text: "x-anthropic-billing-header: cc_version=2.1.177.c0b; cc_entrypoint=cli; cch=a1b2;",
-          },
-          { type: "text", text: "You are a coding assistant." },
-        ],
         messages: [
+          {
+            role: "system",
+            content:
+              "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=a1b2;\nYou are a coding assistant.",
+          },
           { role: "user", content: "first" },
           { role: "SYSTEM", content: "The date changed." },
         ],
-        max_tokens: 4096,
+        max_completion_tokens: 4096,
         stream: true,
       };
 
-      const output = transformClaudeRequestToOpenAI(input);
+      const output = transformOpenAIRequestToClaude(input);
 
       expect(output).toMatchObject({
         model: "claude-sonnet-4-5",
         max_tokens: 4096,
         stream: true,
-        stream_options: { include_usage: true },
+        system: [
+          {
+            type: "text",
+            text: "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli\nYou are a coding assistant.",
+          },
+        ],
         messages: [
-          { role: "system", content: "You are a coding assistant." },
-          { role: "user", content: "first" },
-          { role: "user", content: "The date changed." },
+          { role: "user", content: [{ type: "text", text: "first" }] },
+          { role: "user", content: [{ type: "text", text: "The date changed." }] },
         ],
       });
-      expect(input.messages[1].role).toBe("SYSTEM");
+      expect(input.messages[2].role).toBe("SYSTEM");
     });
 
-    it("strips only volatile cch values from mixed system content", () => {
-      const first = transformClaudeRequestToOpenAI({
-        model: "model",
-        system:
-          "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=aaa;\nStable prompt",
-        messages: [],
-      });
-      const second = transformClaudeRequestToOpenAI({
-        model: "model",
-        system:
-          "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=bbb;\nStable prompt",
-        messages: [],
-      });
+    it("produces the same system prefix when only cch changes", () => {
+      const convert = (cch: string) =>
+        transformOpenAIRequestToClaude({
+          model: "model",
+          messages: [
+            {
+              role: "system",
+              content: `x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=${cch};\nStable`,
+            },
+            { role: "user", content: "hello" },
+          ],
+        });
 
-      expect(first.messages).toEqual(second.messages);
-      expect(JSON.stringify(first.messages)).not.toContain("cch=");
-      expect(JSON.stringify(first.messages)).toContain("cc_version=2.1.177");
+      expect(convert("aaa").system).toEqual(convert("bbb").system);
+      expect(JSON.stringify(convert("aaa").system)).not.toContain("cch=");
       expect(stripVolatileCch("a; cch=token; b")).toBe("a; b");
     });
 
-    it("converts images, tools, tool calls, and tool results", () => {
-      const output = transformClaudeRequestToOpenAI({
+    it("converts images, tools, tool calls, results, and tool choice", () => {
+      const output = transformOpenAIRequestToClaude({
         model: "model",
         messages: [
           {
             role: "user",
             content: [
               { type: "text", text: "inspect" },
-              {
-                type: "image",
-                source: { type: "base64", media_type: "image/png", data: "AAAA" },
-              },
+              { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
             ],
           },
           {
             role: "assistant",
-            content: [
-              { type: "thinking", thinking: "I should inspect it." },
+            content: null,
+            tool_calls: [
               {
-                type: "tool_use",
-                id: "toolu_1",
-                name: "view",
-                input: { path: "a.png" },
-                thinking: "Use the image viewer.",
+                id: "call_1",
+                type: "function",
+                function: { name: "view", arguments: '{"path":"a.png"}' },
               },
             ],
           },
-          {
-            role: "user",
-            content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "ok" }],
-          },
+          { role: "tool", tool_call_id: "call_1", content: "ok" },
         ],
         tools: [
           {
-            name: "view",
-            description: "View a file",
-            input_schema: { type: "object", properties: { path: { type: "string" } } },
+            type: "function",
+            function: {
+              name: "view",
+              description: "View a file",
+              parameters: { type: "object", properties: { path: { type: "string" } } },
+            },
           },
         ],
-        tool_choice: { type: "tool", name: "view", disable_parallel_tool_use: true },
+        tool_choice: { type: "function", function: { name: "view" } },
+        parallel_tool_calls: false,
       });
 
       expect(output.messages).toEqual([
@@ -115,45 +111,65 @@ describe("OpenCode Go converter", () => {
           content: [
             { type: "text", text: "inspect" },
             {
-              type: "image_url",
-              image_url: { url: "data:image/png;base64,AAAA", detail: "auto" },
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "AAAA" },
             },
           ],
         },
         {
           role: "assistant",
-          content: null,
-          reasoning_content: "I should inspect it.Use the image viewer.",
-          tool_calls: [
+          content: [{ type: "tool_use", id: "call_1", name: "view", input: { path: "a.png" } }],
+        },
+        {
+          role: "user",
+          content: [
             {
-              id: "toolu_1",
-              type: "function",
-              function: { name: "view", arguments: '{"path":"a.png"}' },
+              type: "tool_result",
+              tool_use_id: "call_1",
+              content: [{ type: "text", text: "ok" }],
             },
           ],
         },
-        { role: "tool", content: "ok", tool_call_id: "toolu_1" },
       ]);
       expect(output.tools).toEqual([
         {
-          type: "function",
-          function: {
-            name: "view",
-            description: "View a file",
-            parameters: { type: "object", properties: { path: { type: "string" } } },
-          },
+          name: "view",
+          description: "View a file",
+          input_schema: { type: "object", properties: { path: { type: "string" } } },
         },
       ]);
-      expect(output.tool_choice).toEqual({ type: "function", function: { name: "view" } });
-      expect(output.parallel_tool_calls).toBe(false);
+      expect(output.tool_choice).toEqual({
+        type: "tool",
+        name: "view",
+        disable_parallel_tool_use: true,
+      });
     });
   });
 
-  describe("OpenAI response conversion", () => {
-    it("converts text, reasoning, tool calls, stop reason, and cache usage", () => {
-      const output = transformOpenAIResponseToClaude({
-        id: "chatcmpl-123",
-        model: "kimi-k2.5",
+  describe("Anthropic response conversion", () => {
+    it("converts text, thinking, tool use, stop reason, and cache usage", () => {
+      const output = transformClaudeResponseToOpenAI({
+        id: "msg_123",
+        type: "message",
+        model: "claude-sonnet-4-5",
+        content: [
+          { type: "thinking", thinking: "Need a tool." },
+          { type: "text", text: "I will inspect it." },
+          { type: "tool_use", id: "toolu_1", name: "read", input: { path: "a.ts" } },
+        ],
+        stop_reason: "tool_use",
+        usage: {
+          input_tokens: 30,
+          output_tokens: 9,
+          cache_creation_input_tokens: 10,
+          cache_read_input_tokens: 80,
+        },
+      });
+
+      expect(output).toMatchObject({
+        id: "msg_123",
+        object: "chat.completion",
+        model: "claude-sonnet-4-5",
         choices: [
           {
             finish_reason: "tool_calls",
@@ -163,7 +179,7 @@ describe("OpenCode Go converter", () => {
               reasoning_content: "Need a tool.",
               tool_calls: [
                 {
-                  id: "call_1",
+                  id: "toolu_1",
                   type: "function",
                   function: { name: "read", arguments: '{"path":"a.ts"}' },
                 },
@@ -174,144 +190,115 @@ describe("OpenCode Go converter", () => {
         usage: {
           prompt_tokens: 120,
           completion_tokens: 9,
+          total_tokens: 129,
           prompt_tokens_details: { cached_tokens: 80, cache_write_tokens: 10 },
         },
       });
-
-      expect(output).toMatchObject({
-        id: "msg_chatcmpl-123",
-        type: "message",
-        role: "assistant",
-        model: "kimi-k2.5",
-        stop_reason: "tool_use",
-        usage: {
-          input_tokens: 30,
-          output_tokens: 9,
-          cache_creation_input_tokens: 10,
-          cache_read_input_tokens: 80,
-        },
-      });
-      expect(output.content).toEqual([
-        { type: "thinking", thinking: "Need a tool.", signature: "opencode-go" },
-        { type: "text", text: "I will inspect it." },
-        { type: "tool_use", id: "call_1", name: "read", input: { path: "a.ts" } },
-      ]);
     });
 
-    it("supports OpenCode cache hit and miss usage fields", () => {
+    it("converts disjoint Anthropic cache buckets to OpenAI prompt token totals", () => {
       expect(
-        convertOpenAIUsage({
-          prompt_tokens: 100,
-          completion_tokens: 5,
-          prompt_cache_hit_tokens: 70,
-          prompt_cache_miss_tokens: 20,
+        convertAnthropicUsage({
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_creation_input_tokens: 20,
+          cache_read_input_tokens: 70,
         })
       ).toEqual({
-        input_tokens: 10,
-        output_tokens: 5,
-        cache_creation_input_tokens: 20,
-        cache_read_input_tokens: 70,
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        total_tokens: 105,
+        prompt_tokens_details: { cached_tokens: 70, cache_write_tokens: 20 },
       });
     });
   });
 
   describe("stream conversion", () => {
-    it("buffers split frames and emits Claude thinking, text, tools, and final usage", async () => {
+    it("buffers split frames and emits OpenAI thinking, text, tools, finish, and usage", async () => {
       const upstreamChunks: Uint8Array[] = [];
-      const transform = createOpenAIToClaudeStreamTransform("fallback", (chunk) => {
+      const transform = createClaudeToOpenAIStreamTransform("fallback", (chunk) => {
         upstreamChunks.push(chunk);
       });
       const writer = transform.writable.getWriter();
       const outputPromise = readStream(transform.readable);
-      const encoder = new TextEncoder();
       const frames = [
         {
-          id: "chatcmpl-stream",
-          model: "kimi-k2.5",
-          choices: [
-            { delta: { role: "assistant", reasoning_content: "plan" }, finish_reason: null },
-          ],
-        },
-        {
-          id: "chatcmpl-stream",
-          choices: [{ delta: { content: "done" }, finish_reason: null }],
-        },
-        {
-          id: "chatcmpl-stream",
-          choices: [
-            {
-              delta: {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: "call_1",
-                    function: { name: "read", arguments: '{"path"' },
-                  },
-                ],
-              },
-              finish_reason: null,
+          type: "message_start",
+          message: {
+            id: "msg_stream",
+            model: "claude-sonnet-4-5",
+            usage: {
+              input_tokens: 25,
+              output_tokens: 0,
+              cache_read_input_tokens: 75,
+              cache_creation_input_tokens: 10,
             },
-          ],
-        },
-        {
-          id: "chatcmpl-stream",
-          choices: [
-            {
-              delta: { tool_calls: [{ index: 0, function: { arguments: ':"a.ts"}' } }] },
-              finish_reason: "tool_calls",
-            },
-          ],
-        },
-        {
-          id: "chatcmpl-stream",
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 12,
-            prompt_tokens_details: { cached_tokens: 75 },
           },
         },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "plan" },
+        },
+        {
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "text_delta", text: "done" },
+        },
+        {
+          type: "content_block_start",
+          index: 2,
+          content_block: { type: "tool_use", id: "toolu_1", name: "read", input: {} },
+        },
+        {
+          type: "content_block_delta",
+          index: 2,
+          delta: { type: "input_json_delta", partial_json: '{"path":"a.ts"}' },
+        },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use" },
+          usage: { output_tokens: 12 },
+        },
+        { type: "message_stop" },
       ];
-      const source = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`;
+      const source = frames
+        .map((frame) => `event: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`)
+        .join("");
       const split = Math.floor(source.length / 2) + 3;
 
-      await writer.write(encoder.encode(source.slice(0, split)));
-      await writer.write(encoder.encode(source.slice(split)));
+      await writer.write(new TextEncoder().encode(source.slice(0, split)));
+      await writer.write(new TextEncoder().encode(source.slice(split)));
       await writer.close();
       const output = await outputPromise;
 
       expect(upstreamChunks).toHaveLength(2);
-      expect(output).toContain("event: message_start");
-      expect(output).toContain('"type":"thinking_delta","thinking":"plan"');
-      expect(output).toContain('"type":"signature_delta","signature":"opencode-go"');
-      expect(output).toContain('"type":"text_delta","text":"done"');
-      expect(output).toContain('"type":"tool_use","id":"call_1","name":"read"');
-      expect(output).toContain('"partial_json":"{\\"path\\""');
-      expect(output).toContain('"partial_json":":\\"a.ts\\"}"');
-      expect(output).toContain('"stop_reason":"tool_use"');
-      expect(output).toContain(
-        '"input_tokens":25,"output_tokens":12,"cache_creation_input_tokens":0,"cache_read_input_tokens":75'
-      );
-      expect(output.match(/event: message_stop/g)).toHaveLength(1);
-      expect(output).not.toContain("[DONE]");
+      expect(output).toContain('"role":"assistant","content":""');
+      expect(output).toContain('"reasoning_content":"plan"');
+      expect(output).toContain('"content":"done"');
+      expect(output).toContain('"id":"toolu_1","type":"function"');
+      expect(output).toContain('"arguments":"{\\"path\\":\\"a.ts\\"}"');
+      expect(output).toContain('"finish_reason":"tool_calls"');
+      expect(output).toContain('"prompt_tokens":110,"completion_tokens":12,"total_tokens":122');
+      expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     });
 
-    it("converts an upstream streaming error to a Claude error event", async () => {
-      const transform = createOpenAIToClaudeStreamTransform();
+    it("converts an Anthropic streaming error to an OpenAI error object", async () => {
+      const transform = createClaudeToOpenAIStreamTransform();
       const writer = transform.writable.getWriter();
       const outputPromise = readStream(transform.readable);
 
       await writer.write(
         new TextEncoder().encode(
-          'data: {"error":{"type":"rate_limit_error","message":"slow down"}}\n\n'
+          'event: error\ndata: {"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}\n\n'
         )
       );
       await writer.close();
 
       const output = await outputPromise;
-      expect(output).toContain("event: error");
-      expect(output).toContain('"type":"rate_limit_error","message":"slow down"');
-      expect(output).not.toContain("event: message_stop");
+      expect(output).toContain('"type":"rate_limit_error"');
+      expect(output).toContain('"message":"slow down"');
+      expect(output).not.toContain("[DONE]");
     });
   });
 });

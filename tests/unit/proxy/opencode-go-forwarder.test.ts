@@ -41,14 +41,11 @@ function createProvider(): Provider {
 function createMessage(cch: string): Record<string, unknown> {
   return {
     model: "claude-sonnet-4-5",
-    system: [
-      {
-        type: "text",
-        text: `x-anthropic-billing-header: cc_version=2.1.177.c0b; cc_entrypoint=cli; cch=${cch};`,
-      },
-      { type: "text", text: "You are a coding assistant." },
-    ],
     messages: [
+      {
+        role: "system",
+        content: `x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=${cch};\nYou are a coding assistant.`,
+      },
       { role: "user", content: "first" },
       { role: "SYSTEM", content: "The date changed." },
     ],
@@ -61,9 +58,6 @@ function createSession(cch: string): ProxySession {
   const headers = new Headers({
     "content-type": "application/json",
     authorization: "Bearer proxy-user-key",
-    "x-api-key": "proxy-user-key",
-    "anthropic-version": "2023-06-01",
-    "anthropic-beta": "prompt-caching-2024-07-31",
   });
   const message = createMessage(cch);
   const session = Object.create(ProxySession.prototype);
@@ -71,7 +65,7 @@ function createSession(cch: string): ProxySession {
   Object.assign(session, {
     startTime: Date.now(),
     method: "POST",
-    requestUrl: new URL("https://proxy.example.com/v1/messages"),
+    requestUrl: new URL("https://proxy.example.com/v1/chat/completions"),
     headers,
     originalHeaders: new Headers(headers),
     headerLog: JSON.stringify(Object.fromEntries(headers.entries())),
@@ -80,7 +74,7 @@ function createSession(cch: string): ProxySession {
       log: JSON.stringify(message),
       message,
     },
-    userAgent: "claude-cli/2.1.177",
+    userAgent: "OpenAI-Compatible/2026.04",
     context: null,
     clientAbortSignal: null,
     userName: "test-user",
@@ -89,7 +83,7 @@ function createSession(cch: string): ProxySession {
     messageContext: null,
     sessionId: null,
     requestSequence: 1,
-    originalFormat: "claude",
+    originalFormat: "openai",
     providerType: null,
     originalModelName: null,
     originalUrlPathname: null,
@@ -99,7 +93,7 @@ function createSession(cch: string): ProxySession {
     cachedPriceData: undefined,
     cachedBillingModelSource: undefined,
     forwardedRequestBody: null,
-    endpointPolicy: resolveEndpointPolicy("/v1/messages"),
+    endpointPolicy: resolveEndpointPolicy("/v1/chat/completions"),
     setCacheTtlResolved: vi.fn(),
     getCacheTtlResolved: vi.fn(() => null),
     getCurrentModel: vi.fn(() => "claude-sonnet-4-5"),
@@ -107,7 +101,7 @@ function createSession(cch: string): ProxySession {
     setContext1mApplied: vi.fn(),
     getContext1mApplied: vi.fn(() => false),
     getGroupCostMultiplier: vi.fn(() => 1),
-    getEndpointPolicy: vi.fn(() => resolveEndpointPolicy("/v1/messages")),
+    getEndpointPolicy: vi.fn(() => resolveEndpointPolicy("/v1/chat/completions")),
     isHeaderModified: vi.fn(() => false),
   });
 
@@ -119,7 +113,7 @@ describe("ProxyForwarder - OpenCode Go conversion", () => {
     vi.clearAllMocks();
   });
 
-  it("sends a stable OpenAI-compatible request without Anthropic headers", async () => {
+  it("sends a stable Anthropic Messages request with Anthropic headers", async () => {
     const provider = createProvider();
     const captured: Array<{ url: string; init: RequestInit }> = [];
     const fetchWithoutAutoDecode = vi.spyOn(ProxyForwarder as never, "fetchWithoutAutoDecode");
@@ -127,10 +121,13 @@ describe("ProxyForwarder - OpenCode Go conversion", () => {
       captured.push({ url, init });
       return new Response(
         JSON.stringify({
-          id: "chatcmpl-test",
+          id: "msg_test",
+          type: "message",
+          role: "assistant",
           model: "claude-sonnet-4-5",
-          choices: [{ finish_reason: "stop", message: { role: "assistant", content: "ok" } }],
-          usage: { prompt_tokens: 5, completion_tokens: 1 },
+          content: [{ type: "text", text: "ok" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 5, output_tokens: 1 },
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -146,21 +143,25 @@ describe("ProxyForwarder - OpenCode Go conversion", () => {
     await doForward(secondSession, provider, provider.url);
 
     expect(captured).toHaveLength(2);
-    expect(captured[0].url).toBe("https://opencode.example.com/v1/chat/completions");
+    expect(captured[0].url).toBe("https://opencode.example.com/v1/messages");
 
     const upstreamHeaders = new Headers(captured[0].init.headers);
     expect(upstreamHeaders.get("authorization")).toBe("Bearer upstream-key");
-    expect(upstreamHeaders.has("x-api-key")).toBe(false);
-    expect(upstreamHeaders.has("anthropic-version")).toBe(false);
-    expect(upstreamHeaders.has("anthropic-beta")).toBe(false);
+    expect(upstreamHeaders.get("x-api-key")).toBe("upstream-key");
+    expect(upstreamHeaders.get("anthropic-version")).toBe("2023-06-01");
 
     const firstBody = JSON.parse(String(captured[0].init.body));
     const secondBody = JSON.parse(String(captured[1].init.body));
     expect(firstBody).toEqual(secondBody);
+    expect(firstBody.system).toEqual([
+      {
+        type: "text",
+        text: "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli\nYou are a coding assistant.",
+      },
+    ]);
     expect(firstBody.messages).toEqual([
-      { role: "system", content: "You are a coding assistant." },
-      { role: "user", content: "first" },
-      { role: "user", content: "The date changed." },
+      { role: "user", content: [{ type: "text", text: "first" }] },
+      { role: "user", content: [{ type: "text", text: "The date changed." }] },
     ]);
     expect(JSON.stringify(firstBody)).not.toContain("cch=");
     expect(firstSession.request.message).toEqual(createMessage("a1b2"));

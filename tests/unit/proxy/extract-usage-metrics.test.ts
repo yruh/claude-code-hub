@@ -824,7 +824,7 @@ describe("extractUsageMetrics", () => {
   });
 
   describe("openai-compatible cached_tokens subset normalization", () => {
-    it("should normalize native OpenCode Go OpenAI usage", () => {
+    it("should normalize client-visible OpenCode Go OpenAI usage", () => {
       const response = JSON.stringify({
         usage: {
           prompt_tokens: 100,
@@ -843,7 +843,7 @@ describe("extractUsageMetrics", () => {
       });
     });
 
-    it("should keep transformed OpenCode Go Claude stream usage disjoint", () => {
+    it("should keep raw OpenCode Go Anthropic usage disjoint", () => {
       const sse = [
         'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}',
         "",

@@ -25,6 +25,6 @@
   },
   "opencodeGo": {
     "label": "OpenCode Go",
-    "description": "将 Claude Messages 转换为 OpenAI Chat Completions"
+    "description": "将 OpenAI Chat Completions 转换为 Anthropic Messages"
   }
 }

@@ -134,7 +134,7 @@ export const API_ENDPOINTS: Record<ProviderType, string> = {
   "claude-auth": "/v1/messages",
   codex: "/v1/responses",
   "openai-compatible": "/v1/chat/completions",
-  "opencode-go": "/v1/chat/completions",
+  "opencode-go": "/v1/messages",
   gemini: "/v1beta/models/{model}:generateContent",
   "gemini-cli": "/v1beta/models/{model}:generateContent",
 };
@@ -151,11 +151,11 @@ export function getTestBody(providerType: ProviderType, model?: string): Record<
   switch (providerType) {
     case "claude":
     case "claude-auth":
+    case "opencode-go":
       return { ...CLAUDE_TEST_BODY, model: targetModel };
     case "codex":
       return { ...CODEX_TEST_BODY, model: targetModel };
     case "openai-compatible":
-    case "opencode-go":
       return { ...OPENAI_TEST_BODY, model: targetModel };
     case "gemini":
     case "gemini-cli":
@@ -183,6 +183,7 @@ export function getTestHeaders(
   switch (providerType) {
     case "claude":
     case "claude-auth":
+    case "opencode-go":
       Object.assign(headers, {
         ...CLAUDE_TEST_HEADERS,
         ...resolveAnthropicAuthHeaders(apiKey, providerUrl, {
@@ -197,7 +198,6 @@ export function getTestHeaders(
       });
       break;
     case "openai-compatible":
-    case "opencode-go":
       Object.assign(headers, {
         ...OPENAI_TEST_HEADERS,
         Authorization: `Bearer ${apiKey}`,

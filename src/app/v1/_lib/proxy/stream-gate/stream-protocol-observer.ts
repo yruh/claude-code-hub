@@ -1,4 +1,9 @@
-import { classifyFrame, isRequestEchoFrame, type ProtocolFamily } from "./frame-classifier";
+import {
+  classifyFrame,
+  isRequestEchoFrame,
+  isTerminalFrame,
+  type ProtocolFamily,
+} from "./frame-classifier";
 import { type SseFrame, SseFrameParser } from "./sse-frames";
 import { resolveStreamGateCaps } from "./stream-content-gate";
 
@@ -59,7 +64,9 @@ export function createStreamProtocolObserver(family: ProtocolFamily): StreamProt
   const record = (frame: SseFrame): void => {
     const verdict = classifyFrame(family, frame.eventName, frame.data);
     if (verdict === "content") observation.sawContent = true;
-    if (verdict === "terminal") observation.sawTerminal = true;
+    if (verdict === "terminal" || isTerminalFrame(family, frame.eventName, frame.data)) {
+      observation.sawTerminal = true;
+    }
     if (verdict !== "error" && verdict !== "malformed") return;
 
     if (!observation.failure) {

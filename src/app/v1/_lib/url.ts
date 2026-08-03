@@ -51,8 +51,8 @@ const previewEndpointsByType: Record<string, PreviewEndpoint[]> = {
     { key: "openaiModels", path: "/v1/models" },
   ],
   "opencode-go": [
-    { key: "openaiChatCompletions", path: "/v1/chat/completions" },
-    { key: "openaiModels", path: "/v1/models" },
+    { key: "claudeMessages", path: "/v1/messages" },
+    { key: "claudeCountTokens", path: "/v1/messages/count_tokens" },
   ],
   gemini: [
     {

@@ -24,7 +24,7 @@
     "label": "OpenAI Compatible"
   },
   "opencodeGo": {
-    "description": "Claude Messages bridge to OpenAI Chat Completions",
+    "description": "OpenAI Chat Completions bridge to Anthropic Messages",
     "label": "OpenCode Go"
   }
 }

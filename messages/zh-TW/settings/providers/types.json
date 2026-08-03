@@ -24,7 +24,7 @@
     "label": "OpenAI Compatible"
   },
   "opencodeGo": {
-    "description": "將 Claude Messages 轉換為 OpenAI Chat Completions",
+    "description": "將 OpenAI Chat Completions 轉換為 Anthropic Messages",
     "label": "OpenCode Go"
   }
 }

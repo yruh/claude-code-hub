@@ -50,7 +50,7 @@ export const PROVIDER_TYPE_CONFIG: Record<
     bgColor: "bg-cyan-500/15",
   },
   "opencode-go": {
-    icon: OpenAI,
+    icon: Claude.Color,
     iconColor: "text-teal-700",
     bgColor: "bg-teal-500/15",
   },

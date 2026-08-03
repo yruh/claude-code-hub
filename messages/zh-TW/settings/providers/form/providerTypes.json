@@ -7,5 +7,5 @@
   "geminiCliDisabled": "",
   "openaiCompatible": "OpenAI Compatible",
   "openaiCompatibleDisabled": " - 功能開發中",
-  "opencodeGo": "OpenCode Go（Claude 轉 OpenAI）"
+  "opencodeGo": "OpenCode Go（OpenAI 轉 Claude）"
 }

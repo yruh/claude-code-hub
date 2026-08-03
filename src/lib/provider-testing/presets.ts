@@ -41,7 +41,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   cc_haiku_basic: {
     id: "cc_haiku_basic",
     description: "Claude CLI haiku stream",
-    providerTypes: ["claude", "claude-auth"],
+    providerTypes: ["claude", "claude-auth", "opencode-go"],
     payload: ccHaikuBasic,
     defaultSuccessContains: "pong",
     defaultModel: "claude-haiku-4-5-20251001",
@@ -58,7 +58,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   cc_beta_cli: {
     id: "cc_beta_cli",
     description: "Claude CLI beta relay profile",
-    providerTypes: ["claude", "claude-auth"],
+    providerTypes: ["claude", "claude-auth", "opencode-go"],
     payload: ccBetaCli,
     defaultSuccessContains: "pong",
     defaultModel: "claude-haiku-4-5-20251001",
@@ -76,7 +76,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   cc_public_thinking: {
     id: "cc_public_thinking",
     description: "Public Claude with thinking enabled",
-    providerTypes: ["claude", "claude-auth"],
+    providerTypes: ["claude", "claude-auth", "opencode-go"],
     payload: publicCcBase,
     defaultSuccessContains: "pong",
     defaultModel: "claude-sonnet-4-5-20250929",
@@ -123,7 +123,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   oa_chat_basic: {
     id: "oa_chat_basic",
     description: "OpenAI compatible chat completion",
-    providerTypes: ["openai-compatible", "opencode-go"],
+    providerTypes: ["openai-compatible"],
     payload: oaChatBasic,
     defaultSuccessContains: "pong",
     defaultModel: "gpt-4.1-mini",
@@ -134,7 +134,7 @@ export const PRESETS: Record<string, PresetConfig> = {
   oa_chat_stream: {
     id: "oa_chat_stream",
     description: "OpenAI compatible chat completion stream",
-    providerTypes: ["openai-compatible", "opencode-go"],
+    providerTypes: ["openai-compatible"],
     payload: oaChatStream,
     defaultSuccessContains: "pong",
     defaultModel: "gpt-4.1-mini",
@@ -182,7 +182,7 @@ export const PRESET_MAPPING: Record<ProviderType, string[]> = {
   "claude-auth": ["cc_haiku_basic", "cc_beta_cli", "cc_public_thinking"],
   codex: ["cx_codex_basic", "cx_gpt_basic"],
   "openai-compatible": ["oa_chat_basic", "oa_chat_stream"],
-  "opencode-go": ["oa_chat_basic", "oa_chat_stream"],
+  "opencode-go": ["cc_haiku_basic", "cc_beta_cli", "cc_public_thinking"],
   gemini: ["gm_flash_basic", "gm_pro_basic"],
   "gemini-cli": ["gm_flash_basic", "gm_pro_basic"],
 };

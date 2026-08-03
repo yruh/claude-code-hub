@@ -106,12 +106,16 @@ describe("inferOwner - 根据模型 ID 推断所有者", () => {
 });
 
 describe("getProviderTypesForFormat - 客户端格式到 Provider 类型映射", () => {
-  test("claude 格式应返回原生 Claude 和 OpenCode Go 类型", () => {
-    expect(getProviderTypesForFormat("claude")).toEqual(["claude", "claude-auth", "opencode-go"]);
+  test("claude 格式应返回原生 Claude 类型", () => {
+    expect(getProviderTypesForFormat("claude")).toEqual(["claude", "claude-auth"]);
   });
 
-  test("openai 格式应返回 codex 和 openai-compatible 类型", () => {
-    expect(getProviderTypesForFormat("openai")).toEqual(["codex", "openai-compatible"]);
+  test("openai 格式应返回 codex、openai-compatible 和 OpenCode Go 类型", () => {
+    expect(getProviderTypesForFormat("openai")).toEqual([
+      "codex",
+      "openai-compatible",
+      "opencode-go",
+    ]);
   });
 
   test("gemini 格式应返回 gemini 和 gemini-cli 类型", () => {

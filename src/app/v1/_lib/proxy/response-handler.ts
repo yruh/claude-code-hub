@@ -62,8 +62,8 @@ import {
 import { isDiscoveryProtocolErrorPayload } from "./discovery-validity";
 import { isClientAbortError, isTransportError } from "./errors";
 import {
-  createOpenAIToClaudeStreamTransform,
-  transformOpenAIResponseToClaude,
+  createClaudeToOpenAIStreamTransform,
+  transformClaudeResponseToOpenAI,
 } from "./opencode-go-converter";
 import {
   abortReplayOwnership,
@@ -2904,7 +2904,7 @@ export class ProxyResponseHandler {
     if (provider.providerType === "opencode-go") {
       try {
         const responseText = await response.clone().text();
-        const transformed = transformOpenAIResponseToClaude(
+        const transformed = transformClaudeResponseToOpenAI(
           JSON.parse(responseText) as unknown,
           session.request.model ?? ""
         );
@@ -2918,7 +2918,9 @@ export class ProxyResponseHandler {
           headers: transformedHeaders,
         });
       } catch (error) {
-        logger.error("[ResponseHandler] Failed to transform OpenCode Go response", { error });
+        logger.error("[ResponseHandler] Failed to transform OpenCode Go Anthropic response", {
+          error,
+        });
         responseTransformFailed = true;
         finalResponse = response;
         finalResponseBodyForSnapshot = null;
@@ -3094,7 +3096,10 @@ export class ProxyResponseHandler {
           }
         }
 
-        const usageResult = parseUsageFromResponseText(responseText, provider.providerType);
+        const usageResult = parseUsageFromResponseText(
+          responseText,
+          provider.providerType === "opencode-go" ? "claude" : provider.providerType
+        );
         usageMetrics = usageResult.usageMetrics;
         const actualServiceTier = parseServiceTierFromResponseText(responseText);
         const codexPriorityBillingDecision = await resolveCodexPriorityBillingDecision(
@@ -4155,7 +4160,7 @@ export class ProxyResponseHandler {
     if (provider.providerType === "opencode-go") {
       protocolObservedBeforeProcessing = true;
       processedStream = response.body.pipeThrough(
-        createOpenAIToClaudeStreamTransform(session.request.model ?? "", (chunk) => {
+        createClaudeToOpenAIStreamTransform(session.request.model ?? "", (chunk) => {
           streamProtocolObserver?.observe(chunk);
         })
       );

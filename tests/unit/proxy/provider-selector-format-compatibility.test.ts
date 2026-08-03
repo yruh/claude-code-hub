@@ -205,11 +205,11 @@ describe("ProxyProviderResolver.pickRandomProvider - format/providerType compati
     expect(mismatch).toBeDefined();
   });
 
-  test("claude format accepts opencode-go provider", async () => {
+  test("claude format rejects opencode-go provider", async () => {
     const ProxyProviderResolver = await setupResolverMocks();
 
-    const incompatible = createProvider(1, "openai-compatible");
-    const compatible = createProvider(2, "opencode-go");
+    const incompatible = createProvider(1, "opencode-go");
+    const compatible = createProvider(2, "claude");
     const session = createSessionStub(
       "claude",
       [incompatible, compatible],
@@ -222,16 +222,24 @@ describe("ProxyProviderResolver.pickRandomProvider - format/providerType compati
     );
 
     expect(provider?.id).toBe(2);
-    expect(provider?.providerType).toBe("opencode-go");
+    expect(provider?.providerType).toBe("claude");
     expect(context.targetType).toBe("claude");
+    expect(context.filteredProviders).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 1, reason: "format_type_mismatch" })])
+    );
   });
 
-  test("openai format rejects opencode-go provider", async () => {
+  test("openai chat format accepts opencode-go provider", async () => {
     const ProxyProviderResolver = await setupResolverMocks();
 
-    const incompatible = createProvider(1, "opencode-go");
-    const compatible = createProvider(2, "openai-compatible");
-    const session = createSessionStub("openai", [incompatible, compatible], "gpt-4o");
+    const incompatible = createProvider(1, "claude");
+    const compatible = createProvider(2, "opencode-go");
+    const session = createSessionStub(
+      "openai",
+      [incompatible, compatible],
+      "claude-sonnet-4-5",
+      "/v1/chat/completions"
+    );
 
     const { provider, context } = await (ProxyProviderResolver as any).pickRandomProvider(
       session,
@@ -239,21 +247,23 @@ describe("ProxyProviderResolver.pickRandomProvider - format/providerType compati
     );
 
     expect(provider?.id).toBe(2);
+    expect(provider?.providerType).toBe("opencode-go");
+    expect(context.targetType).toBe("openai-compatible");
     expect(context.filteredProviders).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 1, reason: "format_type_mismatch" })])
     );
   });
 
-  test("claude count_tokens endpoint rejects opencode-go provider", async () => {
+  test("non-chat OpenAI endpoint rejects opencode-go provider", async () => {
     const ProxyProviderResolver = await setupResolverMocks();
 
     const incompatible = createProvider(1, "opencode-go");
-    const compatible = createProvider(2, "claude");
+    const compatible = createProvider(2, "openai-compatible");
     const session = createSessionStub(
-      "claude",
+      "openai",
       [incompatible, compatible],
-      "claude-sonnet-4-20250514",
-      "/v1/messages/count_tokens"
+      "text-embedding-3-small",
+      "/v1/embeddings"
     );
 
     const { provider, context } = await (ProxyProviderResolver as any).pickRandomProvider(

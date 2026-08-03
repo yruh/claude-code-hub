@@ -7,5 +7,5 @@
   "geminiCliDisabled": "",
   "openaiCompatible": "OpenAI Compatible",
   "openaiCompatibleDisabled": " - в разработке",
-  "opencodeGo": "OpenCode Go (Claude в OpenAI)"
+  "opencodeGo": "OpenCode Go (OpenAI в Claude)"
 }

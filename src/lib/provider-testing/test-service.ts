@@ -146,11 +146,7 @@ function isRetryableHttpStatus(responseStatus: number): boolean {
 }
 
 function isOpenAiStyleProvider(providerType: ProviderTestConfig["providerType"]): boolean {
-  return (
-    providerType === "codex" ||
-    providerType === "openai-compatible" ||
-    providerType === "opencode-go"
-  );
+  return providerType === "codex" || providerType === "openai-compatible";
 }
 
 function buildValidationDetails(

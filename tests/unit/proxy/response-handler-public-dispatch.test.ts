@@ -128,8 +128,12 @@ function createProvider(): Provider {
   } satisfies Provider;
 }
 
-async function createSession(stream: boolean, provider: Provider | null): Promise<ProxySession> {
-  const request = new Request("https://hub.test/v1/messages", {
+async function createSession(
+  stream: boolean,
+  provider: Provider | null,
+  pathname = "/v1/messages"
+): Promise<ProxySession> {
+  const request = new Request(`https://hub.test${pathname}`, {
     body: JSON.stringify({ messages: [], stream }),
     headers: { "content-type": "application/json" },
     method: "POST",
@@ -192,10 +196,10 @@ describe("ProxyResponseHandler.dispatch public routing", () => {
     expect(releaseAgent).toHaveBeenCalledOnce();
   });
 
-  it("converts an OpenCode Go nonstream response back to Claude Messages", async () => {
+  it("converts an OpenCode Go Anthropic response back to OpenAI Chat Completions", async () => {
     const releaseAgent = vi.fn();
     const provider = { ...createProvider(), providerType: "opencode-go" as const };
-    const session = await createSession(false, provider);
+    const session = await createSession(false, provider, "/v1/chat/completions");
     Object.defineProperty(session, "releaseAgent", {
       configurable: true,
       value: releaseAgent,
@@ -203,19 +207,17 @@ describe("ProxyResponseHandler.dispatch public routing", () => {
     });
     const upstream = new Response(
       JSON.stringify({
-        id: "chatcmpl-dispatch",
+        id: "msg_dispatch",
+        type: "message",
+        role: "assistant",
         model: "kimi-k2.5",
-        choices: [
-          {
-            finish_reason: "stop",
-            message: { role: "assistant", content: "converted" },
-          },
-        ],
+        content: [{ type: "text", text: "converted" }],
+        stop_reason: "end_turn",
         usage: {
-          prompt_tokens: 100,
-          completion_tokens: 4,
-          prompt_cache_hit_tokens: 75,
-          prompt_cache_miss_tokens: 10,
+          input_tokens: 15,
+          output_tokens: 4,
+          cache_read_input_tokens: 75,
+          cache_creation_input_tokens: 10,
         },
       }),
       { headers: { "content-type": "application/json" } }
@@ -226,16 +228,20 @@ describe("ProxyResponseHandler.dispatch public routing", () => {
     await settleTasks();
 
     expect(body).toMatchObject({
-      id: "msg_chatcmpl-dispatch",
-      type: "message",
-      role: "assistant",
+      id: "msg_dispatch",
+      object: "chat.completion",
       model: "kimi-k2.5",
-      content: [{ type: "text", text: "converted" }],
+      choices: [
+        {
+          finish_reason: "stop",
+          message: { role: "assistant", content: "converted" },
+        },
+      ],
       usage: {
-        input_tokens: 15,
-        output_tokens: 4,
-        cache_creation_input_tokens: 10,
-        cache_read_input_tokens: 75,
+        prompt_tokens: 100,
+        completion_tokens: 4,
+        total_tokens: 104,
+        prompt_tokens_details: { cached_tokens: 75, cache_write_tokens: 10 },
       },
     });
     expect(returned.headers.get("content-type")).toContain("application/json");

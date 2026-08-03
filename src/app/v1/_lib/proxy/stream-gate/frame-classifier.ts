@@ -276,11 +276,11 @@ export function mapProviderTypeToFamily(
   switch (providerType) {
     case "claude":
     case "claude-auth":
+    case "opencode-go":
       return "anthropic";
     case "codex":
       return "openai-responses";
     case "openai-compatible":
-    case "opencode-go":
       return "openai-chat";
     case "gemini":
     case "gemini-cli":
@@ -336,6 +336,48 @@ export function classifyFrame(
     return classifyFrameInner(family, STREAM_SIGNALS[family], eventName, data);
   } catch {
     return "neutral";
+  }
+}
+
+/**
+ * A frame can carry content and terminate the stream at the same time. The
+ * primary classifier intentionally returns content first so the pre-commit
+ * gate accepts completed Responses snapshots that omit delta events. Sidecar
+ * observers use this helper to retain the independent terminal signal.
+ */
+export function isTerminalFrame(
+  family: ProtocolFamily,
+  eventName: string | null,
+  data: string
+): boolean {
+  try {
+    const signal = STREAM_SIGNALS[family];
+    const trimmed = data.trim();
+    if (trimmed.length > 0 && signal.doneSentinel && trimmed === signal.doneSentinel) {
+      return true;
+    }
+    if (trimmed.length === 0 || (trimmed[0] !== "{" && trimmed[0] !== "[")) {
+      return false;
+    }
+
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed === null || typeof parsed !== "object") {
+      return false;
+    }
+
+    let effective = (eventName ?? "").trim();
+    if (effective === "" && !Array.isArray(parsed)) {
+      const typeField = (parsed as Record<string, unknown>).type;
+      if (typeof typeField === "string") {
+        effective = typeField;
+      }
+    }
+    if (effective !== "" && signal.terminalEvents?.includes(effective)) {
+      return true;
+    }
+    return (signal.terminalRules ?? []).some((rule) => frameRuleMatches(rule, effective, parsed));
+  } catch {
+    return false;
   }
 }
 
