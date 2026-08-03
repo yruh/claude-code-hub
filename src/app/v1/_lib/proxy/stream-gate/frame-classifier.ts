@@ -174,6 +174,9 @@ const STREAM_SIGNALS: Record<ProtocolFamily, StreamSignal> = {
         anyPaths: [
           "item.content.#.text",
           "item.summary.#.text",
+          // /v1/responses/compact returns the compacted context as an encrypted
+          // compaction item instead of a text delta.
+          "item.encrypted_content",
           "item.arguments",
           "item.input",
           "item.action",
@@ -189,6 +192,13 @@ const STREAM_SIGNALS: Record<ProtocolFamily, StreamSignal> = {
         // 终态 output 非空即代表响应已产生有效结果；空数组仍由 terminalEvents 判为空流。
         eventTypes: ["response.completed", "response.done"],
         anyPaths: ["response.output"],
+      },
+      {
+        // Some Responses-compatible gateways omit output from the terminal
+        // snapshot after streaming a compaction item. A completed status with
+        // no error is still authoritative proof that the response succeeded.
+        eventTypes: ["response.completed", "response.done"],
+        valueMatches: [{ path: "response.status", values: ["completed"] }],
       },
     ],
     errorRules: [

@@ -281,6 +281,16 @@ describe("classifyFrame: openai-responses", () => {
     ).toBe("content");
   });
 
+  it("content: compact output item with encrypted content", () => {
+    expect(
+      classifyFrame(
+        "openai-responses",
+        "response.output_item.done",
+        '{"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"encrypted-summary"}}'
+      )
+    ).toBe("content");
+  });
+
   it("neutral: output_item.added without item.name (message item)", () => {
     expect(
       classifyFrame(
@@ -338,7 +348,17 @@ describe("classifyFrame: openai-responses", () => {
     ).toBe("error");
   });
 
-  it("terminal: response.completed / response.incomplete", () => {
+  it("content: successful response.completed even when a gateway omits output", () => {
+    expect(
+      classifyFrame(
+        "openai-responses",
+        "response.completed",
+        '{"type":"response.completed","response":{"status":"completed","output":null,"error":null}}'
+      )
+    ).toBe("content");
+  });
+
+  it("terminal: empty response.completed without completed status / response.incomplete", () => {
     expect(
       classifyFrame(
         "openai-responses",
