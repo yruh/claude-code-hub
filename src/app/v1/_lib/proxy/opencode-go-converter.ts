@@ -80,20 +80,21 @@ function stableSystemText(value: unknown): string | null {
     return null;
   }
 
-  const text = value
-    .map((part) => {
-      if (typeof part === "string") {
-        return part;
-      }
-      if (!isRecord(part)) {
-        return "";
-      }
-      return typeof part.text === "string" ? part.text : "";
-    })
-    .filter(Boolean)
-    .join("\n\n");
+  const stableParts = value.flatMap((part) => {
+    const text =
+      typeof part === "string"
+        ? part
+        : isRecord(part) && typeof part.text === "string"
+          ? part.text
+          : "";
+    if (!text || BILLING_HEADER_ONLY.test(text)) {
+      return [];
+    }
+    const stable = stripVolatileCch(text);
+    return stable.length > 0 ? [stable] : [];
+  });
 
-  return stableSystemText(text);
+  return stableParts.length > 0 ? stableParts.join("\n\n") : null;
 }
 
 function parseDataUrl(url: string): { mediaType: string; data: string } | null {

@@ -67,6 +67,33 @@ describe("OpenCode Go converter", () => {
       expect(stripVolatileCch("a; cch=token; b")).toBe("a; b");
     });
 
+    it("filters standalone billing blocks from array system content", () => {
+      const output = transformOpenAIRequestToClaude({
+        model: "model",
+        messages: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "text",
+                text: "x-anthropic-billing-header: cc_version=2.1.177; cc_entrypoint=cli; cch=aaa;",
+              },
+              { type: "text", text: "Stable directive; cch=bbb;" },
+            ],
+          },
+          {
+            role: "system",
+            content: [{ type: "text", text: "x-anthropic-billing-header: cch=ccc;" }],
+          },
+          { role: "user", content: "hello" },
+        ],
+      });
+
+      expect(output.system).toEqual([{ type: "text", text: "Stable directive" }]);
+      expect(JSON.stringify(output)).not.toContain("x-anthropic-billing-header");
+      expect(JSON.stringify(output)).not.toContain("cch=");
+    });
+
     it("converts images, tools, tool calls, results, and tool choice", () => {
       const output = transformOpenAIRequestToClaude({
         model: "model",
